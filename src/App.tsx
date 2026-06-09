@@ -3,6 +3,7 @@ import AppShell from './components/AppShell';
 import Matches from './screens/Matches';
 import Standings from './screens/Standings';
 import Insights from './screens/Insights';
+import Sandbox from './screens/Sandbox';
 
 const router = createBrowserRouter([
   {
@@ -12,6 +13,7 @@ const router = createBrowserRouter([
       { index: true, element: <Matches /> },
       { path: 'standings', element: <Standings /> },
       { path: 'insights', element: <Insights /> },
+      { path: 'sandbox', element: <Sandbox /> },
     ],
   },
 ]);
