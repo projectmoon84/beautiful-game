@@ -232,38 +232,57 @@ export const PLAYERS: Player[] = [
 ];
 
 // ── Fixtures ──────────────────────────────────────────────────────
+// Dates are set relative to the app's current demo period (Jun 8–11 2026).
+// TODAY = 2026-06-09. Spread across 4 days so the DateScroller has variety.
 
 export const FIXTURES: Fixture[] = [
+  // ── Jun 8 (yesterday) ─────────────────────────────────────────
   {
     id: 'F1', homeTeamId: 'BRA', awayTeamId: 'POR', venueId: 'V1', groupId: 'C',
-    kickoffUtc: '2026-06-18T20:00:00Z', stage: 'group',
+    kickoffUtc: '2026-06-08T19:00:00Z', stage: 'group',
     status: 'finished', homeScore: 3, awayScore: 2,
     manOfMatchPlayerId: 'BRA-07',
   },
   {
+    id: 'F4', homeTeamId: 'GER', awayTeamId: 'NED', venueId: 'V1', groupId: 'D',
+    kickoffUtc: '2026-06-08T16:00:00Z', stage: 'group',
+    status: 'finished', homeScore: 1, awayScore: 1,
+    manOfMatchPlayerId: 'NED-09',
+  },
+
+  // ── Jun 9 (TODAY) ─────────────────────────────────────────────
+  {
     id: 'F2', homeTeamId: 'ARG', awayTeamId: 'FRA', venueId: 'V2', groupId: 'A',
-    kickoffUtc: '2026-06-19T17:00:00Z', stage: 'group',
+    kickoffUtc: '2026-06-09T16:00:00Z', stage: 'group',
     status: 'live', minute: 67, homeScore: 1, awayScore: 0,
   },
   {
     id: 'F3', homeTeamId: 'ESP', awayTeamId: 'ENG', venueId: 'V3', groupId: 'B',
-    kickoffUtc: '2026-06-19T20:00:00Z', stage: 'group',
+    kickoffUtc: '2026-06-09T19:00:00Z', stage: 'group',
     status: 'scheduled',
   },
-  {
-    id: 'F4', homeTeamId: 'GER', awayTeamId: 'NED', venueId: 'V1', groupId: 'D',
-    kickoffUtc: '2026-06-20T16:00:00Z', stage: 'group',
-    status: 'finished', homeScore: 1, awayScore: 1,
-    manOfMatchPlayerId: 'NED-09',
-  },
+
+  // ── Jun 10 ────────────────────────────────────────────────────
   {
     id: 'F5', homeTeamId: 'BRA', awayTeamId: 'SEN', venueId: 'V3', groupId: 'C',
-    kickoffUtc: '2026-06-23T19:00:00Z', stage: 'group',
+    kickoffUtc: '2026-06-10T16:00:00Z', stage: 'group',
     status: 'scheduled',
   },
   {
     id: 'F6', homeTeamId: 'POR', awayTeamId: 'SRB', venueId: 'V2', groupId: 'C',
-    kickoffUtc: '2026-06-23T19:00:00Z', stage: 'group',
+    kickoffUtc: '2026-06-10T19:00:00Z', stage: 'group',
+    status: 'scheduled',
+  },
+
+  // ── Jun 11 ────────────────────────────────────────────────────
+  {
+    id: 'F7', homeTeamId: 'FRA', awayTeamId: 'URU', venueId: 'V1', groupId: 'A',
+    kickoffUtc: '2026-06-11T16:00:00Z', stage: 'group',
+    status: 'scheduled',
+  },
+  {
+    id: 'F8', homeTeamId: 'ENG', awayTeamId: 'BEL', venueId: 'V3', groupId: 'B',
+    kickoffUtc: '2026-06-11T19:00:00Z', stage: 'group',
     status: 'scheduled',
   },
 ];

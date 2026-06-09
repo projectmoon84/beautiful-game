@@ -1,7 +1,6 @@
 import type { Fixture, Team } from '../data/types';
 import { formatDate, formatTime } from '../utils/format';
 import BigType from './BigType';
-import Pill from './Pill';
 
 interface FixtureCardProps {
   fixture: Fixture;
@@ -13,49 +12,53 @@ interface FixtureCardProps {
 /**
  * FixtureCard — full-bleed split-kit row.
  * Variants (scheduled / live / finished) are derived from fixture.status.
- * Colours are always read from the team records — never hard-coded.
+ * Colours are read from team records only — no hard-coded hex.
+ *
+ * Layout per mockup:
+ *   Top-left:  date · time  (always, home team colour)
+ *   Top-right: minute pill (live) | group label (scheduled/finished)
+ *   Bottom:    flag + BigType code  [score]  [score]  BigType code + flag
+ *
+ * Scheduled cards use xl codes to fill the extra space; live/finished use lg.
  */
 export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onClick }: FixtureCardProps) {
-  const isFinished = f.status === 'finished';
   const isLive = f.status === 'live';
-  const showScore = isFinished || isLive;
+  const isFinished = f.status === 'finished';
+  const showScore = isLive || isFinished;
+
+  // Scheduled gets large codes; scored variants stay readable alongside numbers
+  const codeSize = showScore ? 'lg' : 'xl' as const;
+  const cardHeight = showScore ? 'h-[100px]' : 'h-[118px]';
 
   return (
     <button
       onClick={onClick}
-      className="block w-full rounded-2xl overflow-hidden text-left shadow-sm active:scale-[0.98] transition-transform duration-100"
+      className={`block w-full rounded-2xl overflow-hidden text-left shadow-sm active:scale-[0.98] transition-transform duration-100 ${cardHeight}`}
       type="button"
     >
-      <div className="flex h-24">
-        {/* Home half */}
+      <div className="flex h-full">
+
+        {/* ── Home half ── */}
         <div
-          className="flex-1 flex flex-col justify-between p-3 overflow-hidden relative"
+          className="flex-1 flex flex-col justify-between p-3 overflow-hidden"
           style={{ background: h.secondaryHex }}
         >
-          {/* Top meta */}
+          {/* Date · time — always shown */}
           <div
-            className="text-[10px] font-semibold leading-none opacity-85"
-            style={{ color: h.primaryHex }}
+            className="text-[10px] font-semibold leading-none"
+            style={{ color: h.primaryHex, opacity: 0.85 }}
           >
-            {isLive ? (
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ background: h.primaryHex }}
-                />
-                LIVE
-              </span>
-            ) : (
-              `${formatDate(f.kickoffUtc)} · ${formatTime(f.kickoffUtc)}`
-            )}
+            {formatDate(f.kickoffUtc)} · {formatTime(f.kickoffUtc)}
           </div>
 
-          {/* Code + score */}
+          {/* Flag + code + home score */}
           <div className="flex items-baseline gap-2">
-            <span className="text-[18px]" role="img" aria-label={h.name}>
+            <span className="text-[18px] leading-none" role="img" aria-label={h.name}>
               {h.flagEmoji}
             </span>
-            <BigType size="md" color={h.primaryHex}>{h.shortCode}</BigType>
+            <BigType size={codeSize} color={h.primaryHex}>
+              {h.shortCode}
+            </BigType>
             {showScore && (
               <BigType
                 size="sm"
@@ -68,24 +71,33 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
           </div>
         </div>
 
-        {/* Away half */}
+        {/* ── Away half ── */}
         <div
           className="flex-1 flex flex-col justify-between items-end p-3 overflow-hidden"
           style={{ background: a.secondaryHex }}
         >
-          {/* Top meta */}
+          {/* Status indicator top-right */}
           <div
-            className="text-[10px] font-semibold leading-none opacity-90"
+            className="text-[10px] font-semibold leading-none text-right flex items-center gap-1.5"
             style={{ color: a.tertiaryHex }}
           >
             {isLive ? (
-              <Pill variant="live">{f.minute}'</Pill>
+              <>
+                <span
+                  className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+                  style={{ background: '#22c55e' }}
+                />
+                <span>{f.minute}'</span>
+                <span className="opacity-60">· Group {f.groupId}</span>
+              </>
+            ) : isFinished ? (
+              <span className="opacity-70">FT · Group {f.groupId}</span>
             ) : (
               `Group ${f.groupId}`
             )}
           </div>
 
-          {/* Score + code */}
+          {/* Away score + code + flag */}
           <div className="flex items-baseline gap-2">
             {showScore && (
               <BigType
@@ -96,12 +108,15 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
                 {f.awayScore}
               </BigType>
             )}
-            <BigType size="md" color={a.tertiaryHex}>{a.shortCode}</BigType>
-            <span className="text-[18px]" role="img" aria-label={a.name}>
+            <BigType size={codeSize} color={a.tertiaryHex}>
+              {a.shortCode}
+            </BigType>
+            <span className="text-[18px] leading-none" role="img" aria-label={a.name}>
               {a.flagEmoji}
             </span>
           </div>
         </div>
+
       </div>
     </button>
   );

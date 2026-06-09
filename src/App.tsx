@@ -4,6 +4,7 @@ import Matches from './screens/Matches';
 import Standings from './screens/Standings';
 import Insights from './screens/Insights';
 import Sandbox from './screens/Sandbox';
+import MatchPage from './screens/MatchPage';
 
 const router = createBrowserRouter([
   {
@@ -14,6 +15,7 @@ const router = createBrowserRouter([
       { path: 'standings', element: <Standings /> },
       { path: 'insights', element: <Insights /> },
       { path: 'sandbox', element: <Sandbox /> },
+      { path: 'match/:id', element: <MatchPage /> },
     ],
   },
 ]);
