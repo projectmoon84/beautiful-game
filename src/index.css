@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* ─── Global design tokens ─── */
+:root {
+  --white: #ffffff;
+  --black: #1a1a1a;
+  --surface: #f3efe3;
+  --nav: #14161a;
+
+  /* Default team tokens — overridden per match/team page */
+  --team-primary: #14161a;
+  --team-secondary: #f3efe3;
+  --team-tertiary: #14161a;
+  --team-on-primary: #ffffff;
+  --team-on-secondary: #1a1a1a;
+}
+
+/* ─── Base ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--surface);
+  color: var(--black);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent overscroll bounce revealing a white flash */
+  overscroll-behavior: none;
+}
+
+/* ─── Animation budget rule: transforms + opacity only ─── */
+/* Anything that must animate should only use transform and opacity.
+   width/height/top/left/margin are forbidden on animated elements. */
