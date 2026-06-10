@@ -1,77 +1,282 @@
 /**
  * sync-balldontlie
  *
- * Syncs 2026 World Cup squads and post-match player stats from the
- * BALLDONTLIE FIFA API (https://fifa.balldontlie.io) into our Supabase tables.
+ * Syncs 2026 World Cup squads, live/final scores and real match events from the
+ * BALLDONTLIE FIFA World Cup API (https://fifa.balldontlie.io) into Supabase.
  *
  * Rows with edited_by_admin = true are never overwritten.
- * Rate limit: 10 req/min on the free plan — batches with pauses built in.
+ * Trial/free limits can be as low as 5 req/min, so requests are paced.
  *
  * Deploy:   supabase functions deploy sync-balldontlie
  * Secrets:  supabase secrets set BALLDONTLIE_API_KEY=your_key_here
- * Schedule: in Supabase dashboard → Edge Functions → Schedule → "30 * * * *" (offset from openfootball)
+ * Schedule: in Supabase dashboard -> Edge Functions -> Schedule -> "30 * * * *"
  * Manual:   curl -X POST $SUPABASE_URL/functions/v1/sync-balldontlie \
  *             -H "Authorization: Bearer $SUPABASE_ANON_KEY"
  */
 
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 
-const BASE_URL = 'https://api.balldontlie.io/v1';
-const API_KEY  = Deno.env.get('BALLDONTLIE_API_KEY') ?? '';
+const BASE_URL = 'https://api.balldontlie.io/fifa/worldcup/v1';
+const API_KEY = Deno.env.get('BALLDONTLIE_API_KEY') ?? '';
+const SEASON = 2026;
+const REQUEST_PAUSE_MS = 12_500;
+const EVENT_MATCH_BATCH_SIZE = 8;
 
-// Maps BALLDONTLIE team names/abbreviations → our DB team id
-const TEAM_NAME_MAP: Record<string, string> = {
-  'Argentina':    'ARG', 'France':      'FRA', 'Uruguay':     'URU', 'Poland':      'POL',
-  'Spain':        'ESP', 'England':     'ENG', 'Croatia':     'CRO', 'Belgium':     'BEL',
-  'Brazil':       'BRA', 'Portugal':    'POR', 'Senegal':     'SEN', 'Serbia':      'SRB',
-  'Germany':      'GER', 'Netherlands': 'NED', 'Japan':       'JPN', 'Morocco':     'MAR',
-  // abbreviations
-  'ARG': 'ARG', 'FRA': 'FRA', 'URU': 'URU', 'POL': 'POL',
-  'ESP': 'ESP', 'ENG': 'ENG', 'CRO': 'CRO', 'BEL': 'BEL',
-  'BRA': 'BRA', 'POR': 'POR', 'SEN': 'SEN', 'SRB': 'SRB',
-  'GER': 'GER', 'NED': 'NED', 'JPN': 'JPN', 'MAR': 'MAR',
+const POSITION_MAP: Record<string, 'GK' | 'DEF' | 'MID' | 'FWD'> = {
+  GK: 'GK',
+  G: 'GK',
+  Goalkeeper: 'GK',
+  DEF: 'DEF',
+  D: 'DEF',
+  Defender: 'DEF',
+  M: 'MID',
+  MID: 'MID',
+  Midfielder: 'MID',
+  F: 'FWD',
+  FW: 'FWD',
+  FWD: 'FWD',
+  Forward: 'FWD',
+  Attacker: 'FWD',
 };
 
-const POSITION_MAP: Record<string, string> = {
-  'Goalkeeper': 'GK', 'Defender': 'DEF', 'Midfielder': 'MID', 'Forward': 'FWD',
-  'GK': 'GK', 'DEF': 'DEF', 'MID': 'MID', 'FWD': 'FWD',
-  'G': 'GK', 'D': 'DEF', 'M': 'MID', 'F': 'FWD',
-};
+interface BDTeam {
+  id: number;
+  name: string;
+  abbreviation?: string | null;
+  country_code?: string | null;
+}
 
-function mapPosition(p: string | undefined): 'GK' | 'DEF' | 'MID' | 'FWD' {
-  return (POSITION_MAP[p ?? ''] as 'GK' | 'DEF' | 'MID' | 'FWD') ?? 'MID';
+interface BDPlayer {
+  id: number;
+  name: string;
+  short_name?: string | null;
+  position?: string | null;
+  jersey_number?: string | number | null;
+}
+
+interface BDRoster {
+  season: { year: number };
+  team_id: number;
+  player: BDPlayer;
+  position?: string | null;
+}
+
+interface BDMatch {
+  id: number;
+  match_number?: number | null;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'postponed' | 'cancelled' | string;
+  home_team: BDTeam | null;
+  away_team: BDTeam | null;
+  home_score: number | null;
+  away_score: number | null;
+}
+
+interface BDEvent {
+  id: number;
+  match_id: number;
+  incident_type: string;
+  incident_class?: string | null;
+  time_minute?: number | null;
+  added_time?: number | null;
+  is_home?: boolean | null;
+  player?: BDPlayer | null;
+  assist_player?: BDPlayer | null;
+  player_in?: BDPlayer | null;
+  player_out?: BDPlayer | null;
+}
+
+interface DbFixture {
+  id: string;
+  home_team_id: string;
+  away_team_id: string;
+  status: string;
+  edited_by_admin: boolean;
+}
+
+interface PlayerRow {
+  id: string;
+  team_id: string;
+  name: string;
+  shirt_number: number;
+  position: 'GK' | 'DEF' | 'MID' | 'FWD';
+}
+
+interface EventRow {
+  id: string;
+  fixture_id: string;
+  minute: number;
+  type: 'goal' | 'own_goal' | 'penalty' | 'yellow' | 'red' | 'sub';
+  team_id: string;
+  player_id: string;
+  assist_player_id?: string | null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function appendParam(path: string, key: string, value: string | number): string {
+  return `${path}${path.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(String(value))}`;
+}
+
+function appendArrayParam(path: string, key: string, values: Array<string | number>): string {
+  let nextPath = path;
+  for (const value of values) {
+    nextPath = appendParam(nextPath, `${key}[]`, value);
+  }
+  return nextPath;
 }
 
 async function bdFetch(path: string): Promise<Response> {
   return fetch(`${BASE_URL}${path}`, {
-    headers: { 'Authorization': API_KEY },
+    headers: { Authorization: API_KEY },
   });
 }
 
-// Paginate through all pages of a BALLDONTLIE endpoint
-async function bdFetchAll<T>(
-  path: string,
-  log: string[],
-): Promise<T[]> {
+async function bdFetchAll<T>(path: string, log: string[]): Promise<T[]> {
   const results: T[] = [];
   let cursor: number | undefined;
+  let page = 0;
 
   for (;;) {
-    const url = cursor ? `${path}&cursor=${cursor}` : path;
+    const url = appendParam(cursor ? appendParam(path, 'cursor', cursor) : path, 'per_page', 100);
     const res = await bdFetch(url);
+
     if (!res.ok) {
-      log.push(`WARN: ${url} → HTTP ${res.status}`);
+      const body = await res.text();
+      log.push(`WARN ${url} -> HTTP ${res.status}: ${body.slice(0, 160)}`);
       break;
     }
-    const json = await res.json() as { data: T[]; meta?: { next_cursor?: number } };
-    results.push(...json.data);
+
+    const json = await res.json() as { data?: T[]; meta?: { next_cursor?: number } };
+    results.push(...(json.data ?? []));
     cursor = json.meta?.next_cursor;
+    page++;
+
     if (!cursor) break;
-    // Stay under 10 req/min
-    await new Promise(r => setTimeout(r, 7000));
+    log.push(`Fetched page ${page} from ${path}`);
+    await sleep(REQUEST_PAUSE_MS);
   }
 
   return results;
+}
+
+function teamCode(team: BDTeam | null | undefined): string | undefined {
+  return team?.abbreviation?.toUpperCase() || team?.country_code?.toUpperCase() || undefined;
+}
+
+function mapPosition(position?: string | null): 'GK' | 'DEF' | 'MID' | 'FWD' {
+  return POSITION_MAP[position ?? ''] ?? 'MID';
+}
+
+function shirtNumber(value?: string | number | null): number {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 99;
+}
+
+function playerRow(teamId: string, player: BDPlayer, position?: string | null): PlayerRow {
+  return {
+    id: `${teamId}-${player.id}`,
+    team_id: teamId,
+    name: player.short_name || player.name,
+    shirt_number: shirtNumber(player.jersey_number),
+    position: mapPosition(position ?? player.position),
+  };
+}
+
+function mapMatchStatus(status: string): 'scheduled' | 'live' | 'finished' {
+  if (status === 'in_progress') return 'live';
+  if (status === 'completed') return 'finished';
+  return 'scheduled';
+}
+
+function stageIdFromMatchNumber(matchNumber?: number | null): string | undefined {
+  return matchNumber ? `OF-${matchNumber}` : undefined;
+}
+
+function matchKey(homeTeamId: string, awayTeamId: string): string {
+  return `${homeTeamId}_${awayTeamId}`;
+}
+
+function fixtureForMatch(
+  match: BDMatch,
+  byId: Map<string, DbFixture>,
+  byPair: Map<string, DbFixture>,
+): DbFixture | undefined {
+  const byMatchNumber = stageIdFromMatchNumber(match.match_number);
+  if (byMatchNumber && byId.has(byMatchNumber)) return byId.get(byMatchNumber);
+
+  const homeTeamId = teamCode(match.home_team);
+  const awayTeamId = teamCode(match.away_team);
+  if (!homeTeamId || !awayTeamId) return undefined;
+  return byPair.get(matchKey(homeTeamId, awayTeamId));
+}
+
+function mapEventType(event: BDEvent): EventRow['type'] | null {
+  const type = event.incident_type;
+  const klass = (event.incident_class ?? '').toLowerCase();
+
+  if (type === 'goal') {
+    if (klass.includes('own')) return 'own_goal';
+    if (klass.includes('penalty')) return 'penalty';
+    return 'goal';
+  }
+
+  if (type === 'card') {
+    if (klass.includes('yellow')) return 'yellow';
+    if (klass.includes('red')) return 'red';
+    return null;
+  }
+
+  if (type === 'substitution') return 'sub';
+  return null;
+}
+
+function eventMinute(event: BDEvent): number | null {
+  if (typeof event.time_minute !== 'number') return null;
+  return event.time_minute + (event.added_time ?? 0);
+}
+
+function eventTeamId(event: BDEvent, fixture: DbFixture): string | null {
+  if (event.is_home === true) return fixture.home_team_id;
+  if (event.is_home === false) return fixture.away_team_id;
+  return null;
+}
+
+function eventPlayer(event: BDEvent): BDPlayer | null | undefined {
+  if (event.incident_type === 'substitution') return event.player_in ?? event.player_out ?? event.player;
+  return event.player;
+}
+
+function eventToRow(event: BDEvent, fixture: DbFixture): { row: EventRow; players: PlayerRow[] } | null {
+  const type = mapEventType(event);
+  const minute = eventMinute(event);
+  const teamId = eventTeamId(event, fixture);
+  const player = eventPlayer(event);
+
+  if (!type || minute === null || !teamId || !player) return null;
+
+  const players = [playerRow(teamId, player)];
+  let assistPlayerId: string | null = null;
+
+  if (event.assist_player && (type === 'goal' || type === 'penalty')) {
+    const assist = playerRow(teamId, event.assist_player);
+    players.push(assist);
+    assistPlayerId = assist.id;
+  }
+
+  return {
+    row: {
+      id: `${fixture.id}-BDL-${event.id}`,
+      fixture_id: fixture.id,
+      minute,
+      type,
+      team_id: teamId,
+      player_id: `${teamId}-${player.id}`,
+      assist_player_id: assistPlayerId,
+    },
+    players,
+  };
 }
 
 Deno.serve(async () => {
@@ -85,170 +290,149 @@ Deno.serve(async () => {
   }
 
   try {
-    // ── 1. Fetch BALLDONTLIE teams (to map their IDs to ours) ──────────
-    log.push('Fetching teams…');
-    interface BDTeam { id: number; name: string; abbreviation?: string }
-    const bdTeams = await bdFetchAll<BDTeam>('/teams?league_id=1', log);
-    // league_id=1 is typically the FIFA World Cup on BALLDONTLIE
+    log.push('Fetching BALLDONTLIE FIFA teams...');
+    const teams = await bdFetchAll<BDTeam>(`/teams?seasons[]=${SEASON}`, log);
+    const bdlTeamToOurs = new Map<number, string>();
 
-    const bdTeamIdMap = new Map<number, string>(); // bdId → our id
-    for (const t of bdTeams) {
-      const ours = TEAM_NAME_MAP[t.abbreviation ?? ''] ?? TEAM_NAME_MAP[t.name ?? ''];
-      if (ours) bdTeamIdMap.set(t.id, ours);
+    for (const team of teams) {
+      const code = teamCode(team);
+      if (code) bdlTeamToOurs.set(team.id, code);
     }
-    log.push(`Mapped ${bdTeamIdMap.size}/${bdTeams.length} teams`);
 
-    // ── 2. Get locked player IDs ───────────────────────────────────────
-    const { data: lockedPlayers } = await supabaseAdmin
+    log.push(`Mapped ${bdlTeamToOurs.size}/${teams.length} teams by abbreviation/country_code`);
+
+    const { data: lockedPlayers, error: lockedPlayersError } = await supabaseAdmin
       .from('players')
       .select('id')
       .eq('edited_by_admin', true);
-    const lockedPlayerIds = new Set((lockedPlayers ?? []).map((r: { id: string }) => r.id));
-    log.push(`Locked players (skip): ${lockedPlayerIds.size}`);
+    if (lockedPlayersError) throw lockedPlayersError;
+    const lockedPlayerIds = new Set((lockedPlayers ?? []).map((row: { id: string }) => row.id));
 
-    // ── 3. Fetch + upsert players ─────────────────────────────────────
-    log.push('Fetching players…');
-    interface BDPlayer {
-      id: number;
-      first_name: string;
-      last_name: string;
-      jersey_number?: number;
-      position?: string;
-      team?: { id: number };
-    }
-    const bdPlayers = await bdFetchAll<BDPlayer>('/players?league_id=1&per_page=100', log);
-    log.push(`Fetched ${bdPlayers.length} players`);
+    log.push('Fetching BALLDONTLIE FIFA rosters...');
+    await sleep(REQUEST_PAUSE_MS);
+    const rosters = await bdFetchAll<BDRoster>(`/rosters?seasons[]=${SEASON}`, log);
+    const playerRows = new Map<string, PlayerRow>();
 
-    const playerRows: Array<{
-      id: string;
-      team_id: string;
-      name: string;
-      shirt_number: number;
-      position: string;
-    }> = [];
-
-    for (const p of bdPlayers) {
-      const teamId = bdTeamIdMap.get(p.team?.id ?? 0);
+    for (const roster of rosters) {
+      const teamId = bdlTeamToOurs.get(roster.team_id);
       if (!teamId) continue;
 
-      const id = `${teamId}-${p.id}`;
-      if (lockedPlayerIds.has(id)) continue;
+      const row = playerRow(teamId, roster.player, roster.position);
+      if (!lockedPlayerIds.has(row.id)) playerRows.set(row.id, row);
+    }
 
-      playerRows.push({
-        id,
-        team_id:      teamId,
-        name:         `${p.first_name} ${p.last_name}`.trim(),
-        shirt_number: p.jersey_number ?? 99,
-        position:     mapPosition(p.position),
+    if (playerRows.size > 0) {
+      const { error } = await supabaseAdmin
+        .from('players')
+        .upsert([...playerRows.values()], { onConflict: 'id' });
+      if (error) log.push(`WARN players upsert: ${error.message}`);
+      else log.push(`Upserted ${playerRows.size} roster players`);
+    } else {
+      log.push('No roster players upserted');
+    }
+
+    log.push('Fetching DB fixtures...');
+    const { data: dbFixtures, error: fixturesError } = await supabaseAdmin
+      .from('fixtures')
+      .select('id, home_team_id, away_team_id, status, edited_by_admin');
+    if (fixturesError) throw fixturesError;
+
+    const fixtureById = new Map<string, DbFixture>();
+    const fixtureByPair = new Map<string, DbFixture>();
+    for (const fixture of (dbFixtures ?? []) as DbFixture[]) {
+      fixtureById.set(fixture.id, fixture);
+      fixtureByPair.set(matchKey(fixture.home_team_id, fixture.away_team_id), fixture);
+    }
+
+    log.push('Fetching BALLDONTLIE FIFA matches...');
+    await sleep(REQUEST_PAUSE_MS);
+    const matches = await bdFetchAll<BDMatch>(`/matches?seasons[]=${SEASON}`, log);
+    const bdlMatchToFixture = new Map<number, DbFixture>();
+    const fixtureUpdates: Array<{
+      id: string;
+      status: 'scheduled' | 'live' | 'finished';
+      minute: number | null;
+      home_score: number | null;
+      away_score: number | null;
+    }> = [];
+
+    for (const match of matches) {
+      const fixture = fixtureForMatch(match, fixtureById, fixtureByPair);
+      if (!fixture) continue;
+
+      bdlMatchToFixture.set(match.id, fixture);
+      if (fixture.edited_by_admin) continue;
+
+      fixtureUpdates.push({
+        id: fixture.id,
+        status: mapMatchStatus(match.status),
+        minute: match.status === 'in_progress' ? null : null,
+        home_score: match.home_score,
+        away_score: match.away_score,
       });
     }
 
-    if (playerRows.length > 0) {
+    if (fixtureUpdates.length > 0) {
       const { error } = await supabaseAdmin
-        .from('players')
-        .upsert(playerRows, { onConflict: 'id' });
-      if (error) log.push(`WARN players upsert: ${error.message}`);
-      else log.push(`Upserted ${playerRows.length} players`);
+        .from('fixtures')
+        .upsert(fixtureUpdates, { onConflict: 'id' });
+      if (error) log.push(`WARN fixture upsert: ${error.message}`);
+      else log.push(`Updated ${fixtureUpdates.length} fixture score/status rows`);
     }
 
-    // ── 4. Get finished, unlocked fixtures ────────────────────────────
-    const { data: finishedFixtures, error: fxErr } = await supabaseAdmin
-      .from('fixtures')
-      .select('id, home_team_id, away_team_id')
-      .eq('status', 'finished')
-      .eq('edited_by_admin', false);
-    if (fxErr) throw fxErr;
-    log.push(`Finished unlocked fixtures: ${finishedFixtures?.length ?? 0}`);
+    const eventMatchIds = matches
+      .filter(match => ['in_progress', 'completed'].includes(match.status))
+      .filter(match => bdlMatchToFixture.has(match.id))
+      .map(match => match.id);
 
-    // ── 5. Fetch game list (to map BALLDONTLIE game IDs) ──────────────
-    log.push('Fetching games…');
-    interface BDGame {
-      id: number;
-      home_team: { id: number };
-      visitor_team: { id: number };
-      status: string;
-    }
-    // Brief pause before more requests
-    await new Promise(r => setTimeout(r, 7000));
-    const bdGames = await bdFetchAll<BDGame>('/games?league_id=1&per_page=100', log);
-    log.push(`Fetched ${bdGames.length} games`);
-
-    // Build fixture match index: "HOME_AWAY" → BALLDONTLIE game ID
-    const gameIndex = new Map<string, number>();
-    for (const g of bdGames) {
-      const hId = bdTeamIdMap.get(g.home_team.id);
-      const aId = bdTeamIdMap.get(g.visitor_team.id);
-      if (hId && aId) gameIndex.set(`${hId}_${aId}`, g.id);
-    }
-
-    // ── 6. Fetch box scores + upsert match_events ─────────────────────
     let eventsUpserted = 0;
-    for (const fixture of (finishedFixtures ?? [])) {
-      const bdGameId = gameIndex.get(`${fixture.home_team_id}_${fixture.away_team_id}`);
-      if (!bdGameId) continue;
+    for (let i = 0; i < eventMatchIds.length; i += EVENT_MATCH_BATCH_SIZE) {
+      const batch = eventMatchIds.slice(i, i + EVENT_MATCH_BATCH_SIZE);
+      if (batch.length === 0) continue;
 
-      // Brief pause to respect rate limit
-      await new Promise(r => setTimeout(r, 7000));
-      const res = await bdFetch(`/box_scores/${bdGameId}`);
-      if (!res.ok) {
-        log.push(`WARN: box_score ${bdGameId} → HTTP ${res.status}`);
-        continue;
+      await sleep(REQUEST_PAUSE_MS);
+      const eventsPath = appendArrayParam('/match_events', 'match_ids', batch);
+      const bdlEvents = await bdFetchAll<BDEvent>(eventsPath, log);
+      const eventRows: EventRow[] = [];
+      const eventPlayers = new Map<string, PlayerRow>();
+      const fixtureIdsInBatch = new Set<string>();
+
+      for (const event of bdlEvents) {
+        const fixture = bdlMatchToFixture.get(event.match_id);
+        if (!fixture || fixture.edited_by_admin) continue;
+
+        const mapped = eventToRow(event, fixture);
+        if (!mapped) continue;
+
+        eventRows.push(mapped.row);
+        fixtureIdsInBatch.add(fixture.id);
+        for (const player of mapped.players) {
+          if (!lockedPlayerIds.has(player.id)) eventPlayers.set(player.id, player);
+        }
       }
 
-      interface BDStat {
-        player: { id: number; team?: { id: number } };
-        team: { id: number };
-        goals?: number;
-        assists?: number;
-        yellow_cards?: number;
-        red_cards?: number;
-        jersey_number?: number;
-      }
-      const { data: stats }: { data: BDStat[] } = await res.json();
-      if (!stats?.length) continue;
-
-      // Delete existing events for this fixture before re-inserting
-      await supabaseAdmin.from('match_events').delete().eq('fixture_id', fixture.id);
-
-      const events: Array<{
-        id: string;
-        fixture_id: string;
-        minute: number;
-        type: string;
-        team_id: string;
-        player_id: string;
-      }> = [];
-
-      let eventSeq = 0;
-      for (const stat of stats) {
-        const teamId = bdTeamIdMap.get(stat.team.id);
-        if (!teamId) continue;
-        const playerId = `${teamId}-${stat.player.id}`;
-        const makeId = () => `${fixture.id}-ev-${++eventSeq}`;
-
-        // Fabricate approximate minutes (BALLDONTLIE doesn't always give exact minutes)
-        const baseMid = Math.floor(Math.random() * 85) + 1;
-
-        for (let i = 0; i < (stat.goals ?? 0); i++) {
-          events.push({ id: makeId(), fixture_id: fixture.id, minute: baseMid + i, type: 'goal', team_id: teamId, player_id: playerId });
-        }
-        for (let i = 0; i < (stat.yellow_cards ?? 0); i++) {
-          events.push({ id: makeId(), fixture_id: fixture.id, minute: baseMid + i, type: 'yellow', team_id: teamId, player_id: playerId });
-        }
-        for (let i = 0; i < (stat.red_cards ?? 0); i++) {
-          events.push({ id: makeId(), fixture_id: fixture.id, minute: baseMid, type: 'red', team_id: teamId, player_id: playerId });
-        }
-        // assists and subs are not upserted as events since they require scorer linkage
+      if (eventPlayers.size > 0) {
+        const { error } = await supabaseAdmin
+          .from('players')
+          .upsert([...eventPlayers.values()], { onConflict: 'id' });
+        if (error) log.push(`WARN event-player upsert: ${error.message}`);
       }
 
-      if (events.length > 0) {
-        const { error } = await supabaseAdmin.from('match_events').insert(events);
-        if (error) log.push(`WARN events for ${fixture.id}: ${error.message}`);
-        else eventsUpserted += events.length;
+      for (const fixtureId of fixtureIdsInBatch) {
+        const { error } = await supabaseAdmin.from('match_events').delete().eq('fixture_id', fixtureId);
+        if (error) log.push(`WARN delete events ${fixtureId}: ${error.message}`);
+      }
+
+      if (eventRows.length > 0) {
+        const { error } = await supabaseAdmin
+          .from('match_events')
+          .upsert(eventRows, { onConflict: 'id' });
+        if (error) log.push(`WARN event upsert: ${error.message}`);
+        else eventsUpserted += eventRows.length;
       }
     }
 
-    log.push(`Inserted ${eventsUpserted} match events`);
+    log.push(`Upserted ${eventsUpserted} real match events`);
 
     return new Response(
       JSON.stringify({ ok: true, log }),
