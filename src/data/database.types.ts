@@ -152,25 +152,37 @@ export type Database = {
       }
       players: {
         Row: {
+          date_of_birth: string | null
+          edited_by_admin: boolean
           id: string
           name: string
           position: string
           shirt_number: number
+          source: string | null
           team_id: string
+          updated_at: string
         }
         Insert: {
+          date_of_birth?: string | null
+          edited_by_admin?: boolean
           id: string
           name: string
           position: string
           shirt_number: number
+          source?: string | null
           team_id: string
+          updated_at?: string
         }
         Update: {
+          date_of_birth?: string | null
+          edited_by_admin?: boolean
           id?: string
           name?: string
           position?: string
           shirt_number?: number
+          source?: string | null
           team_id?: string
+          updated_at?: string
         }
         Relationships: []
       }

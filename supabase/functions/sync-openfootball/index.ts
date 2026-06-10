@@ -5,6 +5,7 @@
  * - worldcup.teams.json    -> groups + teams
  * - worldcup.stadiums.json -> venues
  * - worldcup.json          -> group-stage fixtures/results
+ * - worldcup.squads.json   -> squads
  *
  * Rows with edited_by_admin = true are never overwritten.
  *
@@ -20,6 +21,7 @@ const BASE_URL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/m
 const SCHEDULE_URL = `${BASE_URL}/worldcup.json`;
 const TEAMS_URL = `${BASE_URL}/worldcup.teams.json`;
 const STADIUMS_URL = `${BASE_URL}/worldcup.stadiums.json`;
+const SQUADS_URL = `${BASE_URL}/worldcup.squads.json`;
 const SOURCE = 'openfootball';
 
 const COUNTRY_BY_CC: Record<string, string> = {
@@ -85,6 +87,20 @@ interface OFScheduleJson {
   rounds?: Array<{ name: string; matches?: OFMatch[] }>;
 }
 
+interface OFSquadPlayer {
+  number: number;
+  pos: 'GK' | 'DF' | 'MF' | 'FW' | string;
+  name: string;
+  date_of_birth?: string | null;
+}
+
+interface OFSquad {
+  name: string;
+  fifa_code: string;
+  group: string;
+  players: OFSquadPlayer[];
+}
+
 interface TeamRow {
   id: string;
   name: string;
@@ -101,6 +117,17 @@ interface TeamRow {
   fun_fact: string;
   form: string[];
   fifa_code: string;
+}
+
+interface PlayerRow {
+  id: string;
+  team_id: string;
+  name: string;
+  shirt_number: number;
+  position: 'GK' | 'DEF' | 'MID' | 'FWD';
+  date_of_birth: string | null;
+  source: string;
+  updated_at: string;
 }
 
 function slug(value: string): string {
@@ -161,6 +188,18 @@ function fixtureId(match: OFMatch, homeId: string, awayId: string): string {
   return `OF-${match.date}-${homeId}-${awayId}`;
 }
 
+function playerId(teamId: string, shirtNumber: number): string {
+  return `${teamId}-${String(shirtNumber).padStart(2, '0')}`;
+}
+
+function playerPosition(pos: string): PlayerRow['position'] {
+  if (pos === 'GK') return 'GK';
+  if (pos === 'DF') return 'DEF';
+  if (pos === 'MF') return 'MID';
+  if (pos === 'FW') return 'FWD';
+  return 'MID';
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
@@ -172,14 +211,16 @@ Deno.serve(async () => {
   const syncedAt = new Date().toISOString();
 
   try {
-    const [teamsJson, stadiumsJson, scheduleJson] = await Promise.all([
+    const [teamsJson, stadiumsJson, scheduleJson, squadsJson] = await Promise.all([
       fetchJson<OFTeam[]>(TEAMS_URL),
       fetchJson<OFStadiumsJson>(STADIUMS_URL),
       fetchJson<OFScheduleJson>(SCHEDULE_URL),
+      fetchJson<OFSquad[]>(SQUADS_URL),
     ]);
 
     log.push(`Fetched ${teamsJson.length} teams`);
     log.push(`Fetched ${stadiumsJson.stadiums.length} stadiums`);
+    log.push(`Fetched ${squadsJson.length} squads`);
 
     const { data: lockedTeams } = await supabaseAdmin
       .from('teams')
@@ -189,9 +230,14 @@ Deno.serve(async () => {
       .from('fixtures')
       .select('id')
       .eq('edited_by_admin', true);
+    const { data: lockedPlayers } = await supabaseAdmin
+      .from('players')
+      .select('id')
+      .eq('edited_by_admin', true);
 
     const lockedTeamIds = new Set((lockedTeams ?? []).map((row: { id: string }) => row.id));
     const lockedFixtureIds = new Set((lockedFixtures ?? []).map((row: { id: string }) => row.id));
+    const lockedPlayerIds = new Set((lockedPlayers ?? []).map((row: { id: string }) => row.id));
 
     const groups = [...new Set(teamsJson.map(team => team.group))]
       .sort()
@@ -255,6 +301,38 @@ Deno.serve(async () => {
     if (teamError) throw teamError;
     log.push(`Upserted ${teamRows.length} teams; skipped ${lockedTeamIds.size} admin-locked teams`);
 
+    const playerRows = new Map<string, PlayerRow>();
+    for (const squad of squadsJson) {
+      if (!teamNameIndex.has(squad.name) && !teamsJson.some(team => team.fifa_code === squad.fifa_code)) {
+        log.push(`WARN unresolved squad team: ${squad.name}`);
+        continue;
+      }
+
+      for (const player of squad.players) {
+        const id = playerId(squad.fifa_code, player.number);
+        if (lockedPlayerIds.has(id)) continue;
+
+        playerRows.set(id, {
+          id,
+          team_id: squad.fifa_code,
+          name: player.name,
+          shirt_number: player.number,
+          position: playerPosition(player.pos),
+          date_of_birth: player.date_of_birth ?? null,
+          source: SOURCE,
+          updated_at: syncedAt,
+        });
+      }
+    }
+
+    if (playerRows.size > 0) {
+      const { error: playerError } = await supabaseAdmin
+        .from('players')
+        .upsert([...playerRows.values()], { onConflict: 'id' });
+      if (playerError) throw playerError;
+    }
+    log.push(`Upserted ${playerRows.size} squad players; skipped ${lockedPlayerIds.size} admin-locked players`);
+
     const venueByGround = new Map(stadiumRows.map(row => [row.city, row.id]));
     const matches = scheduleJson.matches ?? scheduleJson.rounds?.flatMap(round =>
       (round.matches ?? []).map(match => ({ ...match, round: match.round ?? round.name })),
@@ -303,7 +381,14 @@ Deno.serve(async () => {
     log.push(`Upserted ${fixtureRows.length} fixtures across all resolved stages; skipped ${lockedFixtureIds.size} admin-locked fixtures`);
 
     return new Response(
-      JSON.stringify({ ok: true, groups: groups.length, teams: teamRows.length, fixtures: fixtureRows.length, log }),
+      JSON.stringify({
+        ok: true,
+        groups: groups.length,
+        teams: teamRows.length,
+        players: playerRows.size,
+        fixtures: fixtureRows.length,
+        log,
+      }),
       { headers: { 'Content-Type': 'application/json' } },
     );
   } catch (err) {
