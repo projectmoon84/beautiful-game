@@ -21,6 +21,7 @@ const API_KEY = Deno.env.get('BALLDONTLIE_API_KEY') ?? '';
 const SEASON = 2026;
 const REQUEST_PAUSE_MS = 12_500;
 const EVENT_MATCH_BATCH_SIZE = 8;
+const SOURCE = 'balldontlie';
 
 const POSITION_MAP: Record<string, 'GK' | 'DEF' | 'MID' | 'FWD'> = {
   GK: 'GK',
@@ -99,6 +100,8 @@ interface PlayerRow {
   name: string;
   shirt_number: number;
   position: 'GK' | 'DEF' | 'MID' | 'FWD';
+  source: string;
+  updated_at: string;
 }
 
 interface EventRow {
@@ -109,6 +112,8 @@ interface EventRow {
   team_id: string;
   player_id: string;
   assist_player_id?: string | null;
+  source: string;
+  updated_at: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -174,13 +179,15 @@ function shirtNumber(value?: string | number | null): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 99;
 }
 
-function playerRow(teamId: string, player: BDPlayer, position?: string | null): PlayerRow {
+function playerRow(teamId: string, player: BDPlayer, syncedAt: string, position?: string | null): PlayerRow {
   return {
     id: `${teamId}-${player.id}`,
     team_id: teamId,
     name: player.short_name || player.name,
     shirt_number: shirtNumber(player.jersey_number),
     position: mapPosition(position ?? player.position),
+    source: SOURCE,
+    updated_at: syncedAt,
   };
 }
 
@@ -248,7 +255,7 @@ function eventPlayer(event: BDEvent): BDPlayer | null | undefined {
   return event.player;
 }
 
-function eventToRow(event: BDEvent, fixture: DbFixture): { row: EventRow; players: PlayerRow[] } | null {
+function eventToRow(event: BDEvent, fixture: DbFixture, syncedAt: string): { row: EventRow; players: PlayerRow[] } | null {
   const type = mapEventType(event);
   const minute = eventMinute(event);
   const teamId = eventTeamId(event, fixture);
@@ -256,11 +263,11 @@ function eventToRow(event: BDEvent, fixture: DbFixture): { row: EventRow; player
 
   if (!type || minute === null || !teamId || !player) return null;
 
-  const players = [playerRow(teamId, player)];
+  const players = [playerRow(teamId, player, syncedAt)];
   let assistPlayerId: string | null = null;
 
   if (event.assist_player && (type === 'goal' || type === 'penalty')) {
-    const assist = playerRow(teamId, event.assist_player);
+    const assist = playerRow(teamId, event.assist_player, syncedAt);
     players.push(assist);
     assistPlayerId = assist.id;
   }
@@ -274,6 +281,8 @@ function eventToRow(event: BDEvent, fixture: DbFixture): { row: EventRow; player
       team_id: teamId,
       player_id: `${teamId}-${player.id}`,
       assist_player_id: assistPlayerId,
+      source: SOURCE,
+      updated_at: syncedAt,
     },
     players,
   };
@@ -281,6 +290,7 @@ function eventToRow(event: BDEvent, fixture: DbFixture): { row: EventRow; player
 
 Deno.serve(async () => {
   const log: string[] = [];
+  const syncedAt = new Date().toISOString();
 
   if (!API_KEY) {
     return new Response(
@@ -317,7 +327,7 @@ Deno.serve(async () => {
       const teamId = bdlTeamToOurs.get(roster.team_id);
       if (!teamId) continue;
 
-      const row = playerRow(teamId, roster.player, roster.position);
+      const row = playerRow(teamId, roster.player, syncedAt, roster.position);
       if (!lockedPlayerIds.has(row.id)) playerRows.set(row.id, row);
     }
 
@@ -354,6 +364,8 @@ Deno.serve(async () => {
       minute: number | null;
       home_score: number | null;
       away_score: number | null;
+      source: string;
+      updated_at: string;
     }> = [];
 
     for (const match of matches) {
@@ -369,6 +381,8 @@ Deno.serve(async () => {
         minute: match.status === 'in_progress' ? null : null,
         home_score: match.home_score,
         away_score: match.away_score,
+        source: SOURCE,
+        updated_at: syncedAt,
       });
     }
 
@@ -401,7 +415,7 @@ Deno.serve(async () => {
         const fixture = bdlMatchToFixture.get(event.match_id);
         if (!fixture || fixture.edited_by_admin) continue;
 
-        const mapped = eventToRow(event, fixture);
+        const mapped = eventToRow(event, fixture, syncedAt);
         if (!mapped) continue;
 
         eventRows.push(mapped.row);

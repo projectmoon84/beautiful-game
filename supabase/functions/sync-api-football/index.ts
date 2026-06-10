@@ -27,6 +27,7 @@ const API_KEY    = Deno.env.get('API_Football_API_Key') ?? '';
 const LEAGUE_ID  = 1;    // FIFA World Cup
 const SEASON     = 2026;
 const MAX_EVENTS = 20;   // hard cap on event-fetch requests per run
+const SOURCE     = 'api-football';
 
 // API-Football position → our position
 const POSITION_MAP: Record<string, string> = {
@@ -108,6 +109,7 @@ interface AFSquadResponse {
 Deno.serve(async () => {
   const log: string[] = [];
   let reqCount = 0;
+  const syncedAt = new Date().toISOString();
 
   if (!API_KEY) {
     return new Response(
@@ -180,6 +182,8 @@ Deno.serve(async () => {
       minute: number | null;
       home_score: number | null;
       away_score: number | null;
+      source: string;
+      updated_at: string;
     }> = [];
     for (const [key, afId] of afFixtureIndex) {
       const state = afFixtureState.get(afId);
@@ -192,6 +196,8 @@ Deno.serve(async () => {
         minute: state.status === 'live' ? state.minute : null,
         home_score: state.home_score,
         away_score: state.away_score,
+        source: SOURCE,
+        updated_at: syncedAt,
       });
     }
     if (fixtureUpdates.length > 0) {
@@ -231,6 +237,8 @@ Deno.serve(async () => {
         name: string;
         shirt_number: number;
         position: string;
+        source: string;
+        updated_at: string;
       }> = [];
 
       const rows = evData.response.flatMap((ev, i) => {
@@ -245,6 +253,8 @@ Deno.serve(async () => {
           name: ev.player.name,
           shirt_number: 99,
           position: 'MID',
+          source: SOURCE,
+          updated_at: syncedAt,
         });
 
         let assistPlayerId: string | null = null;
@@ -256,6 +266,8 @@ Deno.serve(async () => {
             name: ev.assist.name,
             shirt_number: 99,
             position: 'MID',
+            source: SOURCE,
+            updated_at: syncedAt,
           });
         }
 
@@ -267,6 +279,8 @@ Deno.serve(async () => {
           team_id:    ourTeam,
           player_id:  playerId,
           assist_player_id: assistPlayerId,
+          source: SOURCE,
+          updated_at: syncedAt,
         }];
       });
 
@@ -318,6 +332,8 @@ Deno.serve(async () => {
             name:         p.name,
             shirt_number: p.number ?? 99,
             position:     POSITION_MAP[p.pos ?? ''] ?? 'MID',
+            source:       SOURCE,
+            updated_at:   syncedAt,
           }));
 
         if (playerRows.length > 0) {

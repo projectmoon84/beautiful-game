@@ -20,6 +20,7 @@ const BASE_URL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/m
 const SCHEDULE_URL = `${BASE_URL}/worldcup.json`;
 const TEAMS_URL = `${BASE_URL}/worldcup.teams.json`;
 const STADIUMS_URL = `${BASE_URL}/worldcup.stadiums.json`;
+const SOURCE = 'openfootball';
 
 const COUNTRY_BY_CC: Record<string, string> = {
   ca: 'Canada',
@@ -168,6 +169,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 Deno.serve(async () => {
   const log: string[] = [];
+  const syncedAt = new Date().toISOString();
 
   try {
     const [teamsJson, stadiumsJson, scheduleJson] = await Promise.all([
@@ -286,6 +288,8 @@ Deno.serve(async () => {
         stage,
         minute: null,
         man_of_match_player_id: null,
+        source: SOURCE,
+        updated_at: syncedAt,
         ...resultFor(match),
       });
     }
