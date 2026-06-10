@@ -348,18 +348,24 @@ Deno.serve(async () => {
       const fixtureGroupId = groupId(match.group);
       const venueId = venueByGround.get(match.ground);
 
-      if (!homeId || !awayId || !venueId || (stage === 'group' && !fixtureGroupId)) {
-        log.push(`WARN unresolved ${stage} fixture: ${match.team1} vs ${match.team2} at ${match.ground}`);
+      // Group fixtures need both teams resolved; knockout teams may still be TBD
+      if (stage === 'group' && (!homeId || !awayId || !fixtureGroupId)) {
+        log.push(`WARN unresolved group fixture: ${match.team1} vs ${match.team2} at ${match.ground}`);
+        continue;
+      }
+      if (!venueId) {
+        log.push(`WARN missing venue for ${stage} fixture: ${match.team1} vs ${match.team2} at ${match.ground}`);
         continue;
       }
 
-      const id = fixtureId(match, homeId, awayId);
+      // Use placeholder team name as fallback ID component for unresolved knockout teams
+      const id = fixtureId(match, homeId ?? match.team1, awayId ?? match.team2);
       if (lockedFixtureIds.has(id)) continue;
 
       fixtureRows.push({
         id,
-        home_team_id: homeId,
-        away_team_id: awayId,
+        home_team_id: homeId ?? null,  // null until group stage determines the team
+        away_team_id: awayId ?? null,
         venue_id: venueId,
         group_id: stage === 'group' ? fixtureGroupId : null,
         kickoff_utc: toIsoDate(match.date, match.time),

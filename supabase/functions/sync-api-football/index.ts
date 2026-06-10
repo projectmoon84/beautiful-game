@@ -205,20 +205,50 @@ Deno.serve(async () => {
       log.push(`Updated ${fixtureUpdates.length} fixture statuses/scores`);
     }
 
-    // ── 4. Find finished fixtures that need events ─────────────────────
+    // ── 4. Build event work queue: LIVE first, then FINISHED ──────────────
+    // Budget math: 2 base reqs + up to MAX_EVENTS event reqs = safe under 100/day
+    // Live fixtures are always re-fetched (in-progress scores change every minute)
+    // Finished fixtures are a one-time fetch per match
+
+    // Which AF fixture IDs are currently live?
+    const liveAfIds = new Set<number>();
+    for (const [afId, state] of afFixtureState) {
+      if (state.status === 'live') liveAfIds.add(afId);
+    }
+    const hasLiveMatches = liveAfIds.size > 0;
+
     const { data: allEvents } = await supabaseAdmin
       .from('match_events')
       .select('fixture_id');
     const fixturesWithEvents = new Set((allEvents ?? []).map((e: { fixture_id: string }) => e.fixture_id));
 
+    // Live DB fixtures (map through AF index, skip admin-locked and unresolved)
+    const liveDbFixtures = (dbFixtures ?? []).filter(f => {
+      if (f.edited_by_admin || !f.home_team_id || !f.away_team_id) return false;
+      const afId = afFixtureIndex.get(`${f.home_team_id}_${f.away_team_id}`);
+      return afId !== undefined && liveAfIds.has(afId);
+    });
+
+    // Finished fixtures with no events yet (one-time fetch per match)
     const { data: finishedFixtures } = await supabaseAdmin
       .from('fixtures')
       .select('id, home_team_id, away_team_id')
       .eq('status', 'finished')
       .eq('edited_by_admin', false);
+    const finishedNeedingEvents = (finishedFixtures ?? [])
+      .filter(f => f.home_team_id && f.away_team_id && !fixturesWithEvents.has(f.id));
 
-    const needEvents = (finishedFixtures ?? []).filter(f => !fixturesWithEvents.has(f.id));
-    log.push(`Finished fixtures needing events: ${needEvents.length}`);
+    if (!hasLiveMatches && finishedNeedingEvents.length === 0) {
+      log.push('No live matches and no finished fixtures need events — skipping event polling (budget saved)');
+    }
+
+    // Merge queues: live fixtures first, then finished-without-events (no duplicates)
+    const liveIds = new Set(liveDbFixtures.map((f: { id: string }) => f.id));
+    const needEvents = [
+      ...liveDbFixtures,
+      ...finishedNeedingEvents.filter((f: { id: string }) => !liveIds.has(f.id)),
+    ];
+    log.push(`Event queue: ${liveDbFixtures.length} live + ${finishedNeedingEvents.length} finished-needing-events`);
 
     // ── 5. Fetch events for each, up to MAX_EVENTS requests ─────────────
     let eventsInserted = 0;

@@ -201,14 +201,16 @@ async function loadFromSupabase(): Promise<void> {
     const hasRealFeedFixtures = fixturesData.some(row => row.id.startsWith('OF-'));
     fixtureCache = fixturesData
       .filter(row => (
-        visibleTeamIds.has(row.home_team_id) &&
-        visibleTeamIds.has(row.away_team_id) &&
+        // Keep knockout fixtures even when teams are TBD (null); group fixtures need both teams
+        (row.stage === 'group'
+          ? visibleTeamIds.has(row.home_team_id) && visibleTeamIds.has(row.away_team_id)
+          : true) &&
         (!hasRealFeedFixtures || row.id.startsWith('OF-'))
       ))
       .map(row => ({
       id:                  row.id,
-      homeTeamId:          row.home_team_id,
-      awayTeamId:          row.away_team_id,
+      homeTeamId:          row.home_team_id ?? '',
+      awayTeamId:          row.away_team_id ?? '',
       venueId:             row.venue_id,
       groupId:             row.group_id ?? '',
       kickoffUtc:          row.kickoff_utc,
