@@ -60,12 +60,12 @@ export default function GroupTable({
             key={row.team.id}
             type={onTeamClick ? 'button' : undefined}
             onClick={onTeamClick ? () => onTeamClick(row.team.id) : undefined}
-            className="flex min-h-[68px] w-full items-center gap-3 px-5 py-4 text-left active:brightness-95"
+            className="flex min-h-[76px] w-full items-center gap-3 px-5 py-4 text-left active:brightness-95"
             style={{ background: row.team.primaryHex, color: row.team.secondaryHex }}
           >
             <span className="flex min-w-0 flex-1 items-center gap-3 leading-none">
               <span className="text-[24px] leading-none">{row.team.flagEmoji}</span>
-              <span className="truncate text-[17px] font-bold">{row.team.name}</span>
+              <span className="truncate text-[15px] font-bold">{row.team.name}</span>
             </span>
 
             <div className="flex shrink-0 items-center gap-3 leading-none">
@@ -75,7 +75,7 @@ export default function GroupTable({
                   <span
                     key={`${row.team.id}-${index}`}
                     className={isLast
-                      ? 'w-9 text-center text-[20px] font-black'
+                      ? 'w-9 text-center text-[17px] font-bold'
                       : 'w-7 text-center text-[15px] font-semibold opacity-80'}
                   >
                     {value}
