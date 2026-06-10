@@ -1,0 +1,16 @@
+<!-- Pitch texture: diagonal stripes (45°). White shapes on transparent — tint via container currentColor + CSS mask. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480">
+  <line x1="-40" y1="480" x2="440" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="0"   y1="480" x2="480" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="40"  y1="480" x2="520" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="80"  y1="480" x2="560" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="120" y1="480" x2="600" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="160" y1="480" x2="640" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="200" y1="480" x2="680" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="240" y1="480" x2="720" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="280" y1="480" x2="760" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="320" y1="480" x2="800" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="360" y1="480" x2="840" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="400" y1="480" x2="880" y2="0"  stroke="white" stroke-width="10"/>
+  <line x1="440" y1="480" x2="920" y2="0"  stroke="white" stroke-width="10"/>
+</svg>

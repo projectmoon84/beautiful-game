@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>The Beautiful Game — match replay demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --home-primary:#009739; --home-field:#F5C800;
+    --away-primary:#FFD100; --away-field:#DA291C;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; margin:0; padding:0;}
+  html,body{height:100%; font-family:'Instrument Sans',system-ui,sans-serif; background:#1b1b1b;}
+  #stage{max-width:440px; margin:0 auto; height:100vh; position:relative; overflow:hidden;
+         display:flex; flex-direction:column; box-shadow:0 0 60px rgba(0,0,0,.4);}
+
+  /* split kit field */
+  .field{position:absolute; inset:0; display:flex;}
+  .field .half{flex:1; position:relative; overflow:hidden;}
+  .field .home{background:var(--home-field);} .field .away{background:var(--away-field);}
+  .ring{position:absolute; border-radius:50%; border:30px solid rgba(255,255,255,.07); left:50%; bottom:-40%; transform:translateX(-50%);}
+  .seam{position:absolute; top:0; bottom:0; left:50%; width:1px; background:rgba(255,255,255,.85); z-index:3;}
+
+  .content{position:relative; z-index:4; flex:1; display:flex; flex-direction:column; padding:14px 16px 0; overflow:hidden;}
+
+  .meta{display:flex; justify-content:space-between; font-size:11px; font-weight:600;}
+  .meta .l{color:var(--home-primary);} .meta .r{color:var(--away-primary);}
+
+  /* fixed top clock — pinned under the meta row */
+  .clock{align-self:center; margin-top:6px; background:#0a0a0a; color:#fff; font-size:12px; font-weight:700;
+    padding:4px 12px; border-radius:999px; min-width:54px; text-align:center; letter-spacing:.02em;}
+
+  /* score header */
+  .head{display:flex; align-items:center; justify-content:center; margin-top:8px;}
+  .code{font-weight:700; font-size:54px; text-transform:uppercase; line-height:.85; letter-spacing:-.02em;}
+  .code.home{color:var(--home-primary);} .code.away{color:var(--away-primary);}
+  .crest{position:relative; width:92px; height:92px; display:flex; align-items:center; justify-content:center; flex:none;}
+  .crest .circle{position:absolute; width:92px; height:92px; border-radius:50%; border:1.5px solid rgba(255,255,255,.85);}
+  .scoreN{font-weight:700; font-size:38px; width:34px; line-height:1;}
+  .scoreN.home{color:var(--home-primary); text-align:right;}
+  .scoreN.away{color:var(--away-primary); text-align:left;}
+  .scoreN.bump{animation:bump .5s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes bump{0%{transform:scale(1)} 35%{transform:scale(1.55)} 100%{transform:scale(1)}}
+  .dot{width:6px;height:6px;border-radius:50%;background:#fff;margin:0 5px;}
+
+  /* event feed — anchored just under the circle, grows downward.
+     newest is prepended at the TOP (nearest circle) and pushes older ones down. */
+  .feed{position:relative; flex:1; margin-top:10px; overflow:hidden;}
+  .centreline{position:absolute; left:50%; top:0; bottom:0; width:1px; background:rgba(255,255,255,.5);}
+  .col{position:absolute; left:0; right:0; top:0; display:flex; flex-direction:column; gap:12px;}
+
+  .ev{display:flex; align-items:flex-start; gap:7px; width:50%;
+      transition:opacity .35s ease, transform .45s cubic-bezier(.16,1,.3,1);}
+  .ev.enter{opacity:0; transform:translateY(-12px);}            /* enters from just under circle */
+  .ev.home{margin-right:50%; flex-direction:row; justify-content:flex-end; padding-right:11px;}
+  .ev.away{margin-left:50%; flex-direction:row-reverse; justify-content:flex-end; padding-left:11px;}
+  .ev .who{font-size:13px; line-height:1.25;}
+  .ev.home .who{text-align:right; color:var(--home-primary);}
+  .ev.away .who{text-align:left; color:var(--away-primary);}
+  .ev .who b{font-weight:600; display:block;}
+  .ev .ic{font-size:13px; margin-top:1px;}
+  .ev .min{background:#fff; color:#000; font-size:11px; font-weight:600; border-radius:999px; padding:2px 6px; margin-top:1px;}
+  .ev.ht{width:100%; margin:0; justify-content:center;}
+  .ev.ht .tag{font-size:10px; font-weight:700; color:#fff; background:rgba(0,0,0,.28); padding:2px 8px; border-radius:6px;}
+
+  /* settle extras */
+  .settle{opacity:0; transition:opacity .5s ease, transform .5s ease; transform:translateY(8px); padding-bottom:8px;}
+  .settle.show{opacity:1; transform:translateY(0);}
+  .mom{display:flex; justify-content:center; margin-top:6px;}
+  .mom span{background:rgba(255,255,255,.85); color:#000; font-size:12px; font-weight:600; padding:4px 12px; border-radius:999px;}
+
+  .hint{position:absolute; bottom:96px; left:50%; transform:translateX(-50%); z-index:10;
+    color:#fff; font-size:11px; font-weight:600; background:rgba(0,0,0,.35); padding:6px 12px; border-radius:999px;
+    opacity:0; transition:opacity .3s; pointer-events:none;}
+  .hint.show{opacity:1;}
+
+  .bar{position:relative; z-index:10; background:#0a0a0a; display:flex; flex-direction:column; gap:10px;
+    padding:12px 16px calc(14px + env(safe-area-inset-bottom));}
+  .btns{display:flex; gap:10px; justify-content:center;}
+  .bar button{font-family:inherit; font-size:13px; font-weight:600; color:#0a0a0a; background:#fff;
+    border:none; border-radius:999px; padding:9px 18px; cursor:pointer;}
+  .bar button.ghost{background:#2c313a; color:#fff;}
+  .slider{display:flex; align-items:center; gap:10px; color:#aeb4bd; font-size:11px; font-weight:600;}
+  .slider input[type=range]{flex:1; accent-color:#fff;}
+  .slider .val{color:#fff; min-width:78px; text-align:right;}
+
+  .rm{position:absolute; top:14px; left:14px; z-index:10; color:#fff; font-size:10px; font-weight:600;
+    background:rgba(0,0,0,.35); border-radius:7px; padding:5px 8px; display:flex; align-items:center; gap:6px;}
+  .rm input{accent-color:#fff;}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="field">
+    <div class="half home"><div class="ring" style="width:240px"></div><div class="ring" style="width:440px"></div><div class="ring" style="width:660px"></div></div>
+    <div class="half away"><div class="ring" style="width:240px"></div><div class="ring" style="width:440px"></div><div class="ring" style="width:660px"></div></div>
+  </div>
+  <div class="seam"></div>
+
+  <div class="rm"><input type="checkbox" id="reduced"/> reduced motion</div>
+
+  <div class="content">
+    <div class="meta"><span class="l">Group B · Sat 13 Jun</span><span class="r">MetLife, NY</span></div>
+    <div class="clock" id="clock">0'</div>
+    <div class="head">
+      <span class="code home">BRA</span>
+      <span class="crest"><span class="circle"></span>
+        <span class="scoreN home" id="hs">0</span><span class="dot"></span><span class="scoreN away" id="as">0</span>
+      </span>
+      <span class="code away">POR</span>
+    </div>
+
+    <div class="feed">
+      <div class="centreline"></div>
+      <div class="col" id="col"></div>
+    </div>
+
+    <div class="settle" id="settle">
+      <div class="mom"><span>★ Man of the match · Vinícius Jr</span></div>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">tap to skip</div>
+  <div class="bar">
+    <div class="slider">
+      <span>Pace</span>
+      <input type="range" id="dur" min="5" max="15" step="1" value="10"/>
+      <span class="val" id="durval">90' in 10s</span>
+    </div>
+    <div class="btns">
+      <button id="replay">↺ Replay</button>
+      <button class="ghost" id="skip">Skip to result</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* chronological (oldest first) */
+const EVENTS=[
+  {min:23, side:"home", type:"goal", scorer:"Vinícius Jr", assist:"Martinelli"},
+  {min:45, side:null,   type:"ht"},
+  {min:48, side:"home", type:"goal", scorer:"Vinícius Jr", assist:"Thiago"},
+  {min:69, side:"away", type:"goal", scorer:"Fernandes", assist:"Vitinha"},
+  {min:70, side:"home", type:"yellow", scorer:"Casemiro"},
+  {min:85, side:"away", type:"goal", scorer:"Dalot", assist:"Mendes"},
+  {min:87, side:"home", type:"goal", scorer:"Thiago", assist:"Fabinho"},
+];
+const FULLTIME=90;
+let DUR_S=10;                 // seconds for the whole 90'
+let raf=null, startT=0, finished=false, fired=[];
+
+const $=(id)=>document.getElementById(id);
+const col=$("col"), clock=$("clock"), hsEl=$("hs"), asEl=$("as"), settle=$("settle"), hint=$("hint");
+
+function setScore(h,a){ hsEl.textContent=h; asEl.textContent=a; }
+function bump(el){ el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+
+function makeNode(e){
+  const el=document.createElement("div");
+  if(e.type==="ht"){ el.className="ev ht enter"; el.innerHTML=`<span class="tag">HT</span>`; return el; }
+  el.className="ev "+e.side+" enter";
+  const icon=e.type==="goal"?"⚽":e.type==="yellow"?"🟨":"🟥";
+  const who=`<div class="who"><b>${e.scorer}</b>${e.assist||""}</div>`;
+  const ic=`<span class="ic">${icon}</span>`, min=`<span class="min">${e.min}'</span>`;
+  el.innerHTML = e.side==="home" ? who+ic+min : min+ic+who;
+  return el;
+}
+
+/* prepend newest at top of the column → older ones get pushed down (CSS transition animates it) */
+function fireEvent(i){
+  const e=EVENTS[i];
+  const el=makeNode(e);
+  col.insertBefore(el, col.firstChild);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.remove("enter")));
+  if(e.type==="goal"){
+    const prevH=+hsEl.textContent, prevA=+asEl.textContent;
+    let h=prevH,a=prevA; if(e.side==="home")h++; else a++;
+    setScore(h,a);
+    bump(e.side==="home"?hsEl:asEl);
+  }
+}
+
+function clearFeed(){ col.innerHTML=""; fired=[]; }
+
+function reducedMotion(){ return $("reduced").checked || matchMedia("(prefers-reduced-motion: reduce)").matches; }
+
+function settleFinal(){
+  finished=true; cancelAnimationFrame(raf);
+  clearFeed();
+  // render all events newest-first (final resting layout), no enter animation, final score
+  let h=0,a=0;
+  for(let i=EVENTS.length-1;i>=0;i--){      // newest at top
+    const e=EVENTS[i]; const el=makeNode(e); el.classList.remove("enter"); col.appendChild(el);
+  }
+  EVENTS.forEach(e=>{ if(e.type==="goal"){ e.side==="home"?h++:a++; } });
+  setScore(h,a);
+  clock.textContent="FT";
+  settle.classList.add("show"); hint.classList.remove("show");
+}
+
+function play(){
+  cancelAnimationFrame(raf); finished=false;
+  clearFeed(); setScore(0,0); clock.textContent="0'";
+  settle.classList.remove("show");
+
+  if(reducedMotion()){ settleFinal(); return; }   // Tier 0
+
+  hint.classList.add("show");
+  const dur=DUR_S*1000;
+  startT=performance.now();
+  function frame(now){
+    const t=Math.min(1,(now-startT)/dur);
+    const curMin=t*FULLTIME;
+    clock.textContent = curMin>=FULLTIME ? "FT" : Math.floor(curMin)+"'";
+    // fire any events whose minute has been reached, in order
+    EVENTS.forEach((e,i)=>{ if(!fired.includes(i) && e.min<=curMin){ fired.push(i); fireEvent(i); } });
+    if(t<1){ raf=requestAnimationFrame(frame); }
+    else { setTimeout(settleFinal, 350); }   // brief beat, then settle into resting layout
+  }
+  raf=requestAnimationFrame(frame);
+}
+
+function skip(){ if(!finished) settleFinal(); }
+
+$("stage").addEventListener("click",(e)=>{
+  if(e.target.closest(".bar")||e.target.closest(".rm")) return;
+  skip();
+});
+$("replay").addEventListener("click",(e)=>{e.stopPropagation(); play();});
+$("skip").addEventListener("click",(e)=>{e.stopPropagation(); skip();});
+$("reduced").addEventListener("change",()=>play());
+$("dur").addEventListener("input",(e)=>{ DUR_S=+e.target.value; $("durval").textContent="90' in "+DUR_S+"s"; });
+$("dur").addEventListener("change",()=>play());
+
+window.addEventListener("load",()=>setTimeout(play,300));
+</script>
+</body>
+</html>

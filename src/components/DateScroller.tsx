@@ -42,19 +42,15 @@ export default function DateScroller({ dates, selectedDate, onSelect }: DateScro
 
   return (
     <div
-      className="sticky top-0 z-30"
-      style={{ background: 'var(--surface)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+      className="sticky top-0 z-30 h-20"
+      style={{ background: 'var(--surface)' }}
     >
-      {/* Scrollable strip */}
       <div
         ref={containerRef}
-        className="flex overflow-x-auto"
+        className="flex h-full items-start overflow-x-auto px-4"
         style={{
           scrollSnapType: 'x mandatory',
           scrollbarWidth: 'none',
-          // Padding lets first/last items reach centre
-          paddingLeft: 'calc(100% / 3)',
-          paddingRight: 'calc(100% / 3)',
         }}
       >
         {dates.map(date => {
@@ -77,28 +73,18 @@ export default function DateScroller({ dates, selectedDate, onSelect }: DateScro
                 scrollSnapAlign: 'center',
               }}
               className={[
-                'flex flex-col items-center justify-center py-3 gap-1.5 transition-colors',
-                selected ? 'text-black' : 'text-[#999]',
+                'mt-2 flex h-12 flex-col items-center justify-start border-t transition-opacity',
+                selected ? 'border-t-[3px] border-[var(--black)] opacity-100' : 'border-t border-[var(--black)] opacity-30',
               ].join(' ')}
             >
               <span
                 className={[
-                  'text-[13px] leading-none',
-                  selected ? 'font-bold' : 'font-medium',
-                  today && !selected ? 'text-[#555]' : '',
+                  'pt-3 text-center text-[12px] font-semibold leading-none text-[var(--black)]',
+                  today ? 'uppercase' : '',
                 ].join(' ')}
               >
                 {label}
               </span>
-
-              {/* Underline indicator */}
-              <span
-                className="h-[2px] rounded-full transition-all duration-200"
-                style={{
-                  width: selected ? '24px' : '0px',
-                  background: 'var(--black)',
-                }}
-              />
             </button>
           );
         })}

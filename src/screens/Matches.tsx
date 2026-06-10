@@ -45,9 +45,8 @@ export default function Matches() {
   }, [dayFixtures]);
 
   return (
-    <div className="flex flex-col min-h-full">
+    <div className="flex min-h-full flex-col">
 
-      {/* Date scroller — sticky at top */}
       {allDates.length > 0 && (
         <DateScroller
           dates={allDates}
@@ -56,12 +55,9 @@ export default function Matches() {
         />
       )}
 
-      {/* Scrollable content */}
-      <div className="flex-1 px-4 pt-4 pb-8">
-
-        {/* Fixture cards */}
+      <div className="flex-1 pb-8">
         {dayFixtures.length > 0 ? (
-          <div className="flex flex-col gap-3 mb-6">
+          <div className="flex flex-col">
             {dayFixtures.map(f => {
               const home = dataService.team(f.homeTeamId);
               const away = dataService.team(f.awayTeamId);
@@ -78,22 +74,18 @@ export default function Matches() {
             })}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-16 text-center opacity-40">
+          <div className="flex min-h-[390px] flex-col items-center justify-center bg-[var(--black)] px-6 text-center text-[var(--surface)] opacity-100">
             <span className="text-4xl mb-3">⚽</span>
             <p className="text-sm font-medium">No fixtures on this date</p>
           </div>
         )}
 
-        {/* Inline standings — one section per group with fixtures today */}
         {dayGroupIds.length > 0 && (
-          <div
-            className="rounded-2xl overflow-hidden"
-            style={{ background: '#FFFFFF', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}
-          >
+          <div className="w-full">
             {dayGroupIds.map((groupId, i) => (
               <div
                 key={groupId}
-                className={i > 0 ? 'border-t-8 border-[#f3efe3]' : ''}
+                className={i > 0 ? 'border-t-8 border-[var(--surface)]' : ''}
               >
                 <InlineStandings groupId={groupId} />
               </div>

@@ -1,0 +1,11 @@
+# Supabase project configuration
+# Generated for: beautiful-game (btzuwdoqrlsnyqtsikwp)
+# Docs: https://supabase.com/docs/guides/cli/config
+
+project_id = "btzuwdoqrlsnyqtsikwp"
+
+[functions.sync-openfootball]
+verify_jwt = false   # triggered by cron scheduler — no user JWT
+
+[functions.sync-balldontlie]
+verify_jwt = false   # triggered by cron scheduler — no user JWT

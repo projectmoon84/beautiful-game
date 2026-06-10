@@ -1,6 +1,6 @@
 import type { Fixture, Team } from '../data/types';
 import { formatDate, formatTime } from '../utils/format';
-import BigType from './BigType';
+import { readableOn } from '../theme/contrast';
 
 interface FixtureCardProps {
   fixture: Fixture;
@@ -24,100 +24,92 @@ interface FixtureCardProps {
 export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onClick }: FixtureCardProps) {
   const isLive = f.status === 'live';
   const isFinished = f.status === 'finished';
-  const showScore = isLive || isFinished;
-
-  // Scheduled gets large codes; scored variants stay readable alongside numbers
-  const codeSize = showScore ? 'lg' : 'xl' as const;
-  const cardHeight = showScore ? 'h-[100px]' : 'h-[118px]';
+  const homeBg = h.secondaryHex;
+  const awayBg = awayTeamBackground(a);
+  const homeInk = readableOn(homeBg) === '#ffffff' ? '#ffffff' : h.primaryHex;
+  const awayInk = readableOn(awayBg) === '#ffffff' ? '#ffffff' : a.tertiaryHex;
+  const homeScore = f.homeScore ?? 0;
+  const awayScore = f.awayScore ?? 0;
 
   return (
     <button
       onClick={onClick}
-      className={`block w-full rounded-2xl overflow-hidden text-left shadow-sm active:scale-[0.98] transition-transform duration-100 ${cardHeight}`}
+      className="relative block h-[130px] w-full overflow-hidden text-left active:brightness-95"
       type="button"
+      aria-label={`${h.name} ${homeScore}, ${a.name} ${awayScore}`}
     >
       <div className="flex h-full">
 
-        {/* ── Home half ── */}
         <div
-          className="flex-1 flex flex-col justify-between p-3 overflow-hidden"
-          style={{ background: h.secondaryHex }}
+          className="flex flex-1 flex-col justify-center gap-2 overflow-hidden p-4"
+          style={{ background: homeBg }}
         >
-          {/* Date · time — always shown */}
           <div
-            className="text-[10px] font-semibold leading-none"
-            style={{ color: h.primaryHex, opacity: 0.85 }}
+            className="text-[12px] font-medium leading-none"
+            style={{ color: homeInk }}
           >
             {formatDate(f.kickoffUtc)} · {formatTime(f.kickoffUtc)}
           </div>
 
-          {/* Flag + code + home score */}
-          <div className="flex items-baseline gap-2">
-            <span className="text-[18px] leading-none" role="img" aria-label={h.name}>
-              {h.flagEmoji}
-            </span>
-            <BigType size={codeSize} color={h.primaryHex}>
+          <div className="flex flex-1 items-end gap-2">
+            <span
+              className="flex flex-1 flex-col justify-end truncate text-[40px] font-bold uppercase leading-[0.9]"
+              style={{ color: homeInk }}
+            >
               {h.shortCode}
-            </BigType>
-            {showScore && (
-              <BigType
-                size="sm"
-                color={h.primaryHex}
-                style={{ marginLeft: 'auto', lineHeight: 1 }}
-              >
-                {f.homeScore}
-              </BigType>
-            )}
+            </span>
+            <span
+              className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
+              style={{ color: homeInk }}
+            >
+              {homeScore}
+            </span>
           </div>
         </div>
 
-        {/* ── Away half ── */}
         <div
-          className="flex-1 flex flex-col justify-between items-end p-3 overflow-hidden"
-          style={{ background: a.secondaryHex }}
+          className="flex flex-1 flex-col justify-center gap-2 overflow-hidden p-4"
+          style={{ background: awayBg }}
         >
-          {/* Status indicator top-right */}
           <div
-            className="text-[10px] font-semibold leading-none text-right flex items-center gap-1.5"
-            style={{ color: a.tertiaryHex }}
+            className="text-right text-[12px] font-medium leading-none"
+            style={{ color: awayInk }}
           >
-            {isLive ? (
-              <>
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ background: '#22c55e' }}
-                />
-                <span>{f.minute}'</span>
-                <span className="opacity-60">· Group {f.groupId}</span>
-              </>
-            ) : isFinished ? (
-              <span className="opacity-70">FT · Group {f.groupId}</span>
-            ) : (
-              `Group ${f.groupId}`
-            )}
+            {isFinished ? `FT · Group ${f.groupId}` : `Group ${f.groupId}`}
           </div>
 
-          {/* Away score + code + flag */}
-          <div className="flex items-baseline gap-2">
-            {showScore && (
-              <BigType
-                size="sm"
-                color={a.tertiaryHex}
-                style={{ marginRight: 'auto', lineHeight: 1 }}
-              >
-                {f.awayScore}
-              </BigType>
-            )}
-            <BigType size={codeSize} color={a.tertiaryHex}>
+          <div className="flex flex-1 items-end gap-2">
+            <span
+              className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
+              style={{ color: awayInk }}
+            >
+              {awayScore}
+            </span>
+            <span
+              className="flex flex-1 flex-col justify-end truncate text-right text-[40px] font-bold uppercase leading-[0.9]"
+              style={{ color: awayInk }}
+            >
               {a.shortCode}
-            </BigType>
-            <span className="text-[18px] leading-none" role="img" aria-label={a.name}>
-              {a.flagEmoji}
             </span>
           </div>
         </div>
 
       </div>
+
+      {isLive && (
+        <div className="absolute left-[54%] top-4 flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1 pr-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#5EE9B5]" />
+          <span className="text-[10px] font-medium leading-none text-white">
+            {f.minute ?? 0} min
+          </span>
+        </div>
+      )}
     </button>
   );
+}
+
+function awayTeamBackground(team: Team): string {
+  return team.primaryHex === '#FFFFFF' || team.primaryHex.toLowerCase() === '#ffffff'
+    ? team.secondaryHex
+    : team.primaryHex;
 }

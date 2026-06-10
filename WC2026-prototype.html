@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>WC2026 — interactive prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  :root{
+    --white:#ffffff; --black:#0a0a0a; --surface:#f4f4f2;
+    /* team colour slots — overwritten per team/zone at runtime */
+    --team-primary:#009739; --team-secondary:#F5C800; --team-tertiary:#F5C800; --team-on:#ffffff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:#1b1b1b; font-family:'Instrument Sans',system-ui,sans-serif; color:var(--black);}
+  #root{max-width:520px; margin:0 auto; min-height:100vh; background:var(--surface); position:relative; overflow:hidden;
+        box-shadow:0 0 60px rgba(0,0,0,.4);}
+  button{font-family:inherit; cursor:pointer; border:none; background:none;}
+  .scroll{overflow-y:auto; -webkit-overflow-scrolling:touch;}
+  ::-webkit-scrollbar{width:0;}
+
+  /* ---- motion ---- */
+  @keyframes fadeUp{from{opacity:0; transform:translateY(16px);} to{opacity:1; transform:translateY(0);}}
+  @keyframes fadeIn{from{opacity:0;} to{opacity:1;}}
+  @keyframes popIn{from{opacity:0; transform:scale(.7);} to{opacity:1; transform:scale(1);}}
+  @keyframes slideInL{from{opacity:0; transform:translateX(-30px);} to{opacity:1; transform:translateX(0);}}
+  @keyframes slideInR{from{opacity:0; transform:translateX(30px);} to{opacity:1; transform:translateX(0);}}
+  @keyframes growLine{from{transform:scaleY(0);} to{transform:scaleY(1);}}
+  .anim-fadeUp{animation:fadeUp .55s cubic-bezier(.16,1,.3,1) both;}
+  .anim-fadeIn{animation:fadeIn .6s ease both;}
+  .anim-pop{animation:popIn .5s cubic-bezier(.34,1.56,.64,1) both;}
+  .page{animation:fadeIn .35s ease both;}
+
+  /* ---- bottom nav ---- */
+  .nav{position:sticky; bottom:0; display:flex; background:var(--black); padding:8px 6px calc(8px + env(safe-area-inset-bottom)); gap:2px; z-index:50;}
+  .nav button{flex:1; color:#888; font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+               display:flex; flex-direction:column; align-items:center; gap:5px; padding:6px 0; border-radius:10px; transition:color .2s;}
+  .nav button.on{color:#fff;}
+  .nav .dot{width:22px; height:22px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:14px;}
+  .nav button.on .dot{background:var(--team-secondary, #F5C800); color:#000;}
+
+  /* ---- shared bits ---- */
+  .rings{position:absolute; inset:0; overflow:hidden; pointer-events:none;}
+  .ring{position:absolute; border-radius:9999px; border:34px solid rgba(255,255,255,.07);}
+  .pill{background:#fff; color:#000; font-size:11px; font-weight:600; border-radius:999px; padding:2px 7px; line-height:1.3; white-space:nowrap;}
+  .hair{border-top:1px solid currentColor;}
+  .bigtype{font-weight:700; text-transform:uppercase; line-height:.82; letter-spacing:-.02em;}
+  .topbar{display:flex; align-items:center; gap:10px; padding:14px 16px; position:sticky; top:0; z-index:40;}
+  .chip{font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; padding:5px 11px; border-radius:999px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState, useMemo, useEffect, useRef} = React;
+
+/* ============================================================
+   1. DATA LAYER  — this is the shape a Supabase row will take.
+   Everything visual reads from here. Swap the innards of
+   `dataService` later for Supabase / a football API; screens
+   never change.
+   ============================================================ */
+
+const TEAMS = {
+  BRA:{code:"BRA", name:"Brazil", flag:"🇧🇷", group:"C", seed:2, odds:"13/2",
+       primary:"#009739", secondary:"#F5C800", tertiary:"#F5C800", on:"#ffffff",
+       fact:"Brazil have the shortest team in the tournament."},
+  POR:{code:"POR", name:"Portugal", flag:"🇵🇹", group:"C", seed:7, odds:"8/1",
+       primary:"#DA291C", secondary:"#DA291C", tertiary:"#FFD100", on:"#ffffff",
+       fact:"Portugal have scored the most freekicks in the tournament."},
+  ARG:{code:"ARG", name:"Argentina", flag:"🇦🇷", group:"A", seed:1, odds:"9/2",
+       primary:"#75AADB", secondary:"#ffffff", tertiary:"#F6B40E", on:"#0a2a52",
+       fact:"Reigning champions, unbeaten in their last 12 group games."},
+  FRA:{code:"FRA", name:"France", flag:"🇫🇷", group:"A", seed:3, odds:"5/1",
+       primary:"#001E96", secondary:"#ffffff", tertiary:"#EE2436", on:"#ffffff",
+       fact:"France have reached two of the last three World Cup finals."},
+  ESP:{code:"ESP", name:"Spain", flag:"🇪🇸", group:"B", seed:4, odds:"6/1",
+       primary:"#C60B1E", secondary:"#FFC400", tertiary:"#FFC400", on:"#ffffff",
+       fact:"Spain's average squad age is the youngest of the favourites."},
+  ENG:{code:"ENG", name:"England", flag:"🏴", group:"B", seed:5, odds:"7/1",
+       primary:"#FFFFFF", secondary:"#CE1124", tertiary:"#001489", on:"#001489",
+       fact:"England have never won a World Cup on foreign soil."},
+  GER:{code:"GER", name:"Germany", flag:"🇩🇪", group:"D", seed:6, odds:"8/1",
+       primary:"#000000", secondary:"#DD0000", tertiary:"#FFCE00", on:"#ffffff",
+       fact:"Four-time winners, chasing a record-equalling fifth star."},
+  NED:{code:"NED", name:"Netherlands", flag:"🇳🇱", group:"D", seed:8, odds:"12/1",
+       primary:"#AE1C28", secondary:"#FF7900", tertiary:"#21468B", on:"#ffffff",
+       fact:"Three-time finalists who have never lifted the trophy."},
+};
+
+const VENUES = {
+  V1:{stadium:"MetLife Stadium", city:"New York/NJ", country:"USA", fact:"Will host the 2026 final — the largest in the tournament."},
+  V2:{stadium:"Estadio Azteca", city:"Mexico City", country:"Mexico", fact:"The only stadium to host two previous World Cup finals."},
+  V3:{stadium:"BC Place", city:"Vancouver", country:"Canada", fact:"Sits right on the downtown waterfront."},
+};
+
+// match events drive the timeline + the player stats leaderboards
+const FIXTURES = [
+  {id:"F1", home:"BRA", away:"POR", venue:"V1", group:"C", stage:"Group",
+   kickoff:"Fri 18 June", time:"21:00", tz:"UK", status:"finished", hs:3, as:2, mom:"Vinícius Jr",
+   events:[
+     {min:23, type:"goal", team:"BRA", player:"Vinícius Jr", assist:"Martinelli"},
+     {min:48, type:"goal", team:"BRA", player:"Vinícius Jr", assist:"Thiago"},
+     {min:69, type:"goal", team:"POR", player:"Fernandes", assist:"Vitinha"},
+     {min:70, type:"yellow", team:"BRA", player:"Casemiro"},
+     {min:85, type:"goal", team:"POR", player:"Dalot", assist:"Mendes"},
+     {min:87, type:"goal", team:"BRA", player:"Thiago", assist:"Fabinho"},
+   ]},
+  {id:"F2", home:"ARG", away:"FRA", venue:"V2", group:"A", stage:"Group",
+   kickoff:"Sat 19 June", time:"18:00", tz:"UK", status:"scheduled", hs:null, as:null, events:[]},
+  {id:"F3", home:"ESP", away:"ENG", venue:"V3", group:"B", stage:"Group",
+   kickoff:"Sat 19 June", time:"21:00", tz:"UK", status:"scheduled", hs:null, as:null, events:[]},
+  {id:"F4", home:"GER", away:"NED", venue:"V1", group:"D", stage:"Group",
+   kickoff:"Sun 20 June", time:"17:00", tz:"UK", status:"finished", hs:1, as:1, mom:"Gakpo",
+   events:[
+     {min:34, type:"goal", team:"GER", player:"Wirtz", assist:"Musiala"},
+     {min:77, type:"goal", team:"NED", player:"Gakpo", assist:"Frimpong"},
+   ]},
+];
+
+const SQUADS = {
+  BRA:[["1","Alisson","GK"],["2","Danilo","DF"],["3","Marquinhos","DF"],["5","Casemiro","MF"],
+       ["7","Vinícius Jr","FW"],["9","Endrick","FW"],["10","Rodrygo","FW"],["11","Raphinha","FW"],
+       ["8","Fabinho","MF"],["15","Thiago","MF"],["19","Martinelli","FW"]],
+  POR:[["1","Costa","GK"],["2","Dalot","DF"],["3","Pepe","DF"],["8","Fernandes","MF"],
+       ["7","Ronaldo","FW"],["10","Bernardo","MF"],["11","Leão","FW"],["20","Vitinha","MF"],
+       ["12","Mendes","DF"]],
+};
+
+const FORM = { // last 5, most recent first
+  BRA:["W","W","D","W","L"], POR:["W","L","W","W","D"], ARG:["W","W","W","D","W"],
+  FRA:["D","W","W","L","W"], ESP:["W","D","W","W","W"], ENG:["L","W","D","W","W"],
+  GER:["W","D","L","W","W"], NED:["D","D","W","L","W"],
+};
+
+const H2H = { "BRA-POR":["BRA 2-0","POR 1-1 BRA","BRA 3-1"], };
+
+const NEWS = {
+  BRA:"Vinícius Jr declared fully fit after late training scare.",
+  POR:"Ronaldo named captain for a record sixth World Cup campaign.",
+  ARG:"Messi: 'This squad is hungrier than 2022.'",
+};
+
+const GROUPS = {
+  A:["ARG","FRA"], B:["ESP","ENG"], C:["BRA","POR"], D:["GER","NED"],
+};
+// fabricated standings for the prototype
+const STANDINGS = {
+  A:[["ARG",3,3,0,0,7,9],["FRA",3,2,0,1,2,6],["—",3,1,0,2,-3,3],["—",3,0,0,3,-6,0]],
+  B:[["ESP",3,2,1,0,4,7],["ENG",3,2,0,1,3,6],["—",3,1,0,2,-2,3],["—",3,0,1,2,-5,1]],
+  C:[["BRA",3,3,0,0,6,9],["POR",3,1,1,1,0,4],["—",3,1,0,2,-2,3],["—",3,0,1,2,-4,1]],
+  D:[["GER",3,2,1,0,3,7],["NED",3,1,2,0,1,5],["—",3,1,0,2,-1,3],["—",3,0,1,2,-3,1]],
+};
+
+const dataService = {
+  team:(c)=>TEAMS[c],
+  allTeams:()=>Object.values(TEAMS),
+  fixtures:()=>FIXTURES,
+  fixture:(id)=>FIXTURES.find(f=>f.id===id),
+  venue:(v)=>VENUES[v],
+  squad:(c)=>SQUADS[c]||[],
+  form:(c)=>FORM[c]||[],
+  news:(c)=>NEWS[c],
+  groups:()=>GROUPS,
+  standings:(g)=>STANDINGS[g],
+  teamFixtures:(c)=>FIXTURES.filter(f=>f.home===c||f.away===c),
+  // editorial stats — derived from match_events, exactly as Supabase would
+  playerStats:()=>{
+    const g={};
+    FIXTURES.forEach(f=>f.events.forEach(e=>{
+      if(e.type==="goal"){ g[e.player]=g[e.player]||{name:e.player,team:e.team,goals:0,assists:0};
+        g[e.player].goals++;
+        if(e.assist){ g[e.assist]=g[e.assist]||{name:e.assist,team:e.team,goals:0,assists:0}; g[e.assist].assists++; } }
+    }));
+    return Object.values(g).sort((a,b)=>b.goals-a.goals||b.assists-a.assists);
+  },
+  insights:()=>([
+    {label:"Highest scoring", team:"BRA", value:"3 goals", sub:"vs Portugal — a Group C statement."},
+    {label:"Most cards", team:"GER", value:"4 yellows", sub:"Discipline a worry for the favourites."},
+    {label:"Dark horse", team:"NED", value:"12/1", sub:"Held Germany; quietly building."},
+    {label:"Defying the odds", team:"POR", value:"Seed 7", sub:"Punching above their seeding so far."},
+  ]),
+};
+
+/* ============================================================
+   2. THEMING ENGINE
+   ThemeZone pours a team's colours into the CSS slots. Swap the
+   team and the whole zone re-themes. Maps 1:1 to a teams table.
+   ============================================================ */
+
+function teamVars(t){
+  return {
+    "--team-primary":t.primary,
+    "--team-secondary":t.secondary,
+    "--team-tertiary":t.tertiary,
+    "--team-on":t.on,
+  };
+}
+// auto contrast helper — keeps text legible on any kit colour (WCAG-minded)
+function readableOn(hex){
+  const h=hex.replace("#",""); const r=parseInt(h.substr(0,2),16),
+    g=parseInt(h.substr(2,2),16), b=parseInt(h.substr(4,2),16);
+  const L=(0.299*r+0.587*g+0.114*b)/255;
+  return L>0.6 ? "#0a0a0a" : "#ffffff";
+}
+
+function Rings({color}){
+  return (
+    <div className="rings" aria-hidden="true">
+      {[120,260,440,640,860].map((s,i)=>(
+        <div key={i} className="ring" style={{
+          width:s, height:s, left:"50%", bottom:-s*0.35,
+          transform:"translateX(-50%)",
+          borderColor: i===0 ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.07)",
+          borderWidth: i===0 ? 2 : 30,
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================
+   3. SHARED COMPONENTS
+   ============================================================ */
+
+function Form({result}){
+  const map={W:"#1db954",D:"#c9a227",L:"#e23b3b"};
+  return (
+    <div style={{display:"flex",gap:4}}>
+      {result.map((r,i)=>(
+        <span key={i} style={{width:22,height:22,borderRadius:6,background:map[r],color:"#fff",
+          fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{r}</span>
+      ))}
+    </div>
+  );
+}
+
+function MetaCell({label,color,align="left",accent}){
+  return (
+    <div className="hair" style={{flex:1,paddingTop:8,color:accent||color,minWidth:0}}>
+      <div style={{fontSize:11,fontWeight:600,textAlign:align,letterSpacing:".02em",
+        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
+    </div>
+  );
+}
+
+/* ---- the hero: RESULT / MATCH PAGE ---- */
+function MatchPage({fixtureId, onTeam}){
+  const f = dataService.fixture(fixtureId);
+  const home = dataService.team(f.home), away = dataService.team(f.away);
+  const venue = dataService.venue(f.venue);
+  const finished = f.status==="finished";
+
+  // split events by side, sorted latest-first to mirror the concept (top = late)
+  const ev = [...f.events].sort((a,b)=>b.min-a.min);
+
+  const icon=(t)=> t==="goal" ? "⚽" : t==="yellow" ? "🟨" : t==="red" ? "🟥" : "•";
+
+  return (
+    <div className="page" style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+      {/* split background */}
+      <div style={{position:"relative",flex:1,display:"flex"}}>
+        <div style={{position:"absolute",inset:0,display:"flex"}}>
+          <div style={{flex:1,background:home.secondary,position:"relative",overflow:"hidden"}}><Rings/></div>
+          <div style={{flex:1,background:away.secondary,position:"relative",overflow:"hidden"}}><Rings/></div>
+        </div>
+        {/* centre dividing line */}
+        <div style={{position:"absolute",top:0,bottom:0,left:"50%",width:1,background:"rgba(255,255,255,.85)"}}/>
+
+        {/* content */}
+        <div style={{position:"relative",width:"100%",display:"flex",flexDirection:"column",
+          padding:"14px 14px 28px"}}>
+
+          {/* meta strip */}
+          <div style={{display:"flex",gap:10,marginBottom:6}}>
+            <MetaCell label={`Group ${f.group}`} accent={home.primary}/>
+            <MetaCell label={f.kickoff} accent={home.primary}/>
+            <MetaCell label={`${f.time} ${f.tz}`} accent={away.tertiary} align="right"/>
+            <MetaCell label={venue.city} accent={away.tertiary} align="right"/>
+          </div>
+
+          {/* score header */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"6px 0 2px"}}>
+            <button onClick={()=>onTeam(home.code)} className="anim-slideInL" style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:18}}>{home.flag}</span>
+              <span className="bigtype anim-fadeUp" style={{fontSize:64,color:home.primary}}>{home.code}</span>
+            </button>
+            <div style={{position:"relative",width:96,height:96,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <div style={{position:"absolute",width:96,height:96,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,.85)"}}/>
+              <span className="bigtype anim-pop" style={{fontSize:40,color:home.primary,width:38,textAlign:"right"}}>{finished?f.hs:"–"}</span>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"#fff",margin:"0 4px",zIndex:2}}/>
+              <span className="bigtype anim-pop" style={{fontSize:40,color:away.tertiary,width:38,textAlign:"left"}}>{finished?f.as:"–"}</span>
+            </div>
+            <button onClick={()=>onTeam(away.code)} className="anim-slideInR" style={{display:"flex",alignItems:"center",gap:6}}>
+              <span className="bigtype anim-fadeUp" style={{fontSize:64,color:away.tertiary}}>{away.code}</span>
+              <span style={{fontSize:18}}>{away.flag}</span>
+            </button>
+          </div>
+
+          {/* fact panels */}
+          <div style={{display:"flex",gap:14,marginTop:14}}>
+            <div style={{flex:1,color:home.primary}}>
+              <div className="hair" style={{paddingTop:7,marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:600}}>Title odds</div>
+                <div style={{fontSize:13}}>{home.odds}</div>
+              </div>
+              <div className="hair" style={{paddingTop:7}}>
+                <div style={{fontSize:13,fontWeight:600}}>That's a fact</div>
+                <div style={{fontSize:12,lineHeight:1.35}}>{home.fact}</div>
+              </div>
+            </div>
+            <div style={{flex:1,color:away.tertiary,textAlign:"right"}}>
+              <div className="hair" style={{paddingTop:7,marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:600}}>Title odds</div>
+                <div style={{fontSize:13}}>{away.odds}</div>
+              </div>
+              <div className="hair" style={{paddingTop:7}}>
+                <div style={{fontSize:13,fontWeight:600}}>That's a fact</div>
+                <div style={{fontSize:12,lineHeight:1.35}}>{away.fact}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* event timeline */}
+          {finished && (
+            <div style={{position:"relative",marginTop:22,flex:1}}>
+              <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:"rgba(255,255,255,.8)",
+                transformOrigin:"top",animation:"growLine .8s ease both"}}/>
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                {ev.map((e,i)=>{
+                  const homeSide = e.team===f.home;
+                  return (
+                    <div key={i} className="anim-fadeUp" style={{animationDelay:`${i*0.08+0.3}s`,
+                      display:"flex",justifyContent:homeSide?"flex-end":"flex-start"}}>
+                      <div style={{width:"50%",display:"flex",alignItems:"flex-start",gap:8,
+                        flexDirection:homeSide?"row":"row-reverse",
+                        justifyContent:homeSide?"flex-end":"flex-start",
+                        paddingRight:homeSide?10:0,paddingLeft:homeSide?0:10}}>
+                        <div style={{textAlign:homeSide?"right":"left"}}>
+                          <div style={{fontSize:13,fontWeight:600,color:homeSide?home.primary:away.tertiary}}>{e.player}</div>
+                          {e.assist && <div style={{fontSize:13,color:homeSide?home.primary:away.tertiary}}>{e.assist}</div>}
+                        </div>
+                        <span style={{fontSize:13}}>{icon(e.type)}</span>
+                        <span className="pill">{e.min}'</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {finished && (
+            <div style={{textAlign:"center",marginTop:18,color:home.primary}}>
+              <span className="chip" style={{background:"rgba(255,255,255,.7)",color:"#000"}}>★ MOM · {f.mom}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- FIXTURE CARD (mini split) ---- */
+function FixtureCard({f, onOpen}){
+  const h=dataService.team(f.home), a=dataService.team(f.away);
+  const fin=f.status==="finished";
+  return (
+    <button onClick={()=>onOpen(f.id)} className="anim-fadeUp" style={{display:"block",width:"100%",
+      borderRadius:16,overflow:"hidden",marginBottom:12,textAlign:"left",boxShadow:"0 2px 10px rgba(0,0,0,.08)"}}>
+      <div style={{display:"flex",height:96}}>
+        <div style={{flex:1,background:h.secondary,position:"relative",padding:"12px 14px",display:"flex",
+          flexDirection:"column",justifyContent:"space-between",overflow:"hidden"}}>
+          <div style={{fontSize:10,fontWeight:600,color:h.primary,opacity:.85}}>{f.kickoff} · {f.time}</div>
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <span style={{fontSize:14}}>{h.flag}</span>
+            <span className="bigtype" style={{fontSize:30,color:h.primary}}>{h.code}</span>
+            {fin && <span className="bigtype" style={{fontSize:24,color:h.primary,marginLeft:"auto"}}>{f.hs}</span>}
+          </div>
+        </div>
+        <div style={{flex:1,background:a.secondary,position:"relative",padding:"12px 14px",display:"flex",
+          flexDirection:"column",justifyContent:"space-between",alignItems:"flex-end",overflow:"hidden"}}>
+          <div style={{fontSize:10,fontWeight:600,color:a.tertiary,opacity:.9}}>Group {f.group}</div>
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            {fin && <span className="bigtype" style={{fontSize:24,color:a.tertiary,marginRight:"auto"}}>{f.as}</span>}
+            <span className="bigtype" style={{fontSize:30,color:a.tertiary}}>{a.code}</span>
+            <span style={{fontSize:14}}>{a.flag}</span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* ---- FIXTURES + GROUPS SCREEN ---- */
+function FixturesScreen({onOpen}){
+  const [tab,setTab]=useState("fixtures");
+  const groups=dataService.groups();
+  return (
+    <div className="page scroll" style={{height:"100%"}}>
+      <div className="topbar" style={{background:"var(--surface)"}}>
+        <h1 className="bigtype" style={{fontSize:34,margin:0}}>Matches</h1>
+      </div>
+      <div style={{display:"flex",gap:8,padding:"0 16px 12px"}}>
+        {["fixtures","groups"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} className="chip"
+            style={{background:tab===t?"#0a0a0a":"#e3e3e0",color:tab===t?"#fff":"#555"}}>{t}</button>
+        ))}
+      </div>
+      <div style={{padding:"0 16px 24px"}}>
+        {tab==="fixtures" && dataService.fixtures().map(f=><FixtureCard key={f.id} f={f} onOpen={onOpen}/>)}
+        {tab==="groups" && Object.keys(groups).map(g=>(
+          <div key={g} className="anim-fadeUp" style={{marginBottom:18,background:"#fff",borderRadius:16,
+            overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,.06)"}}>
+            <div style={{background:"#0a0a0a",color:"#fff",padding:"8px 14px",fontWeight:700,fontSize:14}}>Group {g}</div>
+            <div style={{padding:"4px 14px 10px"}}>
+              <div style={{display:"flex",fontSize:10,color:"#999",fontWeight:600,padding:"6px 0",
+                borderBottom:"1px solid #eee"}}>
+                <span style={{flex:1}}>TEAM</span><span style={{width:24,textAlign:"center"}}>P</span>
+                <span style={{width:24,textAlign:"center"}}>GD</span><span style={{width:28,textAlign:"center"}}>PTS</span>
+              </div>
+              {dataService.standings(g).map((row,i)=>{
+                const t=TEAMS[row[0]];
+                return (
+                  <div key={i} style={{display:"flex",alignItems:"center",fontSize:13,padding:"7px 0",
+                    borderBottom:"1px solid #f3f3f3",fontWeight:i<2?600:400,color:i<2?"#0a0a0a":"#aaa"}}>
+                    <span style={{flex:1,display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{width:6,height:18,borderRadius:3,background:t?t.primary:"#ddd"}}/>
+                      {t?`${t.flag} ${t.name}`:"—"}
+                    </span>
+                    <span style={{width:24,textAlign:"center"}}>{row[1]}</span>
+                    <span style={{width:24,textAlign:"center"}}>{row[5]>0?`+${row[5]}`:row[5]}</span>
+                    <span style={{width:28,textAlign:"center",fontWeight:700}}>{row[6]}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---- TEAMS BROWSE ---- */
+function TeamsScreen({onTeam}){
+  const [q,setQ]=useState("");
+  const teams=dataService.allTeams().filter(t=>t.name.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="page scroll" style={{height:"100%"}}>
+      <div className="topbar" style={{background:"var(--surface)",flexDirection:"column",alignItems:"stretch",gap:12}}>
+        <h1 className="bigtype" style={{fontSize:34,margin:0}}>Teams</h1>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search nations…"
+          style={{padding:"11px 14px",borderRadius:12,border:"1px solid #ddd",fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"4px 16px 24px"}}>
+        {teams.map((t,i)=>(
+          <button key={t.code} onClick={()=>onTeam(t.code)} className="anim-fadeUp"
+            style={{animationDelay:`${i*0.04}s`,borderRadius:16,overflow:"hidden",textAlign:"left",
+            background:t.secondary,position:"relative",height:128,padding:14,
+            boxShadow:"0 2px 10px rgba(0,0,0,.1)"}}>
+            <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
+              <div style={{position:"absolute",width:160,height:160,borderRadius:"50%",
+                border:"26px solid rgba(255,255,255,.08)",right:-50,bottom:-50}}/>
+            </div>
+            <div style={{position:"relative",display:"flex",flexDirection:"column",height:"100%",justifyContent:"space-between"}}>
+              <span style={{fontSize:22}}>{t.flag}</span>
+              <div>
+                <div className="bigtype" style={{fontSize:30,color:t.primary}}>{t.code}</div>
+                <div style={{fontSize:11,fontWeight:600,color:t.primary,opacity:.85}}>{t.name} · {t.odds}</div>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---- TEAM PAGE ---- */
+function TeamPage({code, onOpen}){
+  const t=dataService.team(code);
+  const squad=dataService.squad(code);
+  const news=dataService.news(code);
+  const fixtures=dataService.teamFixtures(code);
+  const vars=teamVars(t);
+  return (
+    <div className="page scroll" style={{height:"100%",...vars}}>
+      {/* themed hero */}
+      <div style={{background:t.secondary,position:"relative",overflow:"hidden",padding:"22px 18px 26px"}}>
+        <div style={{position:"absolute",width:260,height:260,borderRadius:"50%",
+          border:"34px solid rgba(255,255,255,.08)",right:-70,top:-60}}/>
+        <div style={{position:"relative"}}>
+          <div style={{fontSize:30,marginBottom:4}}>{t.flag}</div>
+          <div className="bigtype" style={{fontSize:88,color:t.primary,lineHeight:.85}}>{t.code}</div>
+          <div style={{fontSize:18,fontWeight:600,color:t.primary,marginTop:2}}>{t.name}</div>
+          <div style={{display:"flex",gap:18,marginTop:16,color:t.primary}}>
+            <div><div style={{fontSize:11,fontWeight:600,opacity:.8}}>Seed</div><div style={{fontSize:20,fontWeight:700}}>#{t.seed}</div></div>
+            <div><div style={{fontSize:11,fontWeight:600,opacity:.8}}>Title odds</div><div style={{fontSize:20,fontWeight:700}}>{t.odds}</div></div>
+            <div><div style={{fontSize:11,fontWeight:600,opacity:.8}}>Group</div><div style={{fontSize:20,fontWeight:700}}>{t.group}</div></div>
+          </div>
+          <div style={{marginTop:16,color:t.primary}}>
+            <div style={{fontSize:11,fontWeight:600,opacity:.8,marginBottom:5}}>Form (last 5)</div>
+            <Form result={dataService.form(code)}/>
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 16px 24px"}}>
+        {news && (
+          <div className="anim-fadeUp" style={{background:t.primary,color:readableOn(t.primary),borderRadius:14,
+            padding:"12px 14px",marginBottom:16}}>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:".08em",opacity:.8,marginBottom:3}}>HEADLINE</div>
+            <div style={{fontSize:14,fontWeight:600,lineHeight:1.35}}>{news}</div>
+          </div>
+        )}
+
+        <h3 style={{fontSize:13,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",color:"#888",margin:"0 0 8px"}}>Squad</h3>
+        <div style={{background:"#fff",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,.06)",marginBottom:18}}>
+          {squad.map((p,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",
+              borderBottom:i<squad.length-1?"1px solid #f3f3f3":"none"}}>
+              <span style={{width:26,height:26,borderRadius:7,background:t.secondary,color:t.primary,
+                fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{p[0]}</span>
+              <span style={{flex:1,fontSize:14,fontWeight:500}}>{p[1]}</span>
+              <span style={{fontSize:11,color:"#999",fontWeight:600}}>{p[2]}</span>
+            </div>
+          ))}
+        </div>
+
+        <h3 style={{fontSize:13,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",color:"#888",margin:"0 0 8px"}}>Fixtures</h3>
+        {fixtures.map(f=><FixtureCard key={f.id} f={f} onOpen={onOpen}/>)}
+      </div>
+    </div>
+  );
+}
+
+/* ---- KNOCKOUT + STATS ---- */
+function StatsScreen({onTeam}){
+  const [tab,setTab]=useState("bracket");
+  const stats=dataService.playerStats();
+  const insights=dataService.insights();
+  const maxG=Math.max(...stats.map(s=>s.goals),1);
+
+  const Match=({h,a})=>{
+    const ht=h?TEAMS[h]:null, at=a?TEAMS[a]:null;
+    return (
+      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.07)",fontSize:12}}>
+        {[ht,at].map((t,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"7px 10px",
+            borderBottom:i===0?"1px solid #f0f0f0":"none"}}>
+            <span style={{width:5,height:14,borderRadius:2,background:t?t.primary:"#ddd"}}/>
+            <span style={{fontWeight:600}}>{t?`${t.flag} ${t.code}`:"TBC"}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="page scroll" style={{height:"100%"}}>
+      <div className="topbar" style={{background:"var(--surface)"}}>
+        <h1 className="bigtype" style={{fontSize:34,margin:0}}>Insights</h1>
+      </div>
+      <div style={{display:"flex",gap:8,padding:"0 16px 12px"}}>
+        {["bracket","scorers","stories"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} className="chip"
+            style={{background:tab===t?"#0a0a0a":"#e3e3e0",color:tab===t?"#fff":"#555"}}>{t}</button>
+        ))}
+      </div>
+
+      <div style={{padding:"0 16px 28px"}}>
+        {tab==="bracket" && (
+          <div className="anim-fadeIn" style={{display:"flex",gap:10,alignItems:"center",overflowX:"auto",paddingBottom:8}}>
+            <div style={{display:"flex",flexDirection:"column",gap:12,minWidth:140}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#999",letterSpacing:".06em"}}>QUARTERS</div>
+              <Match h="BRA" a="FRA"/><Match h="ESP" a="GER"/><Match h="ARG" a="NED"/><Match h="POR" a="ENG"/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:34,minWidth:140}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#999",letterSpacing:".06em"}}>SEMIS</div>
+              <Match h="BRA" a="ESP"/><Match h="ARG" a="POR"/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12,minWidth:140}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#999",letterSpacing:".06em"}}>FINAL</div>
+              <Match h="BRA" a="ARG"/>
+              <div style={{background:"#0a0a0a",color:"#fff",borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+                <div style={{fontSize:10,opacity:.7,fontWeight:600}}>🏆 CHAMPIONS</div>
+                <div className="bigtype" style={{fontSize:24,marginTop:4}}>🇧🇷 BRA</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab==="scorers" && (
+          <div className="anim-fadeIn">
+            {stats.map((s,i)=>{
+              const t=TEAMS[s.team];
+              return (
+                <button key={i} onClick={()=>onTeam(s.team)} className="anim-fadeUp" style={{animationDelay:`${i*.05}s`,
+                  display:"flex",alignItems:"center",gap:12,width:"100%",textAlign:"left",
+                  background:"#fff",borderRadius:12,padding:"11px 14px",marginBottom:9,boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
+                  <span className="bigtype" style={{fontSize:20,color:"#ccc",width:22}}>{i+1}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600}}>{t.flag} {s.name}</div>
+                    <div style={{height:6,borderRadius:3,background:"#f0f0f0",marginTop:6,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${(s.goals/maxG)*100}%`,background:t.primary,borderRadius:3,
+                        animation:"slideInL .6s ease both"}}/>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:18,fontWeight:700}}>{s.goals}</div>
+                    <div style={{fontSize:10,color:"#999"}}>{s.assists} ast</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {tab==="stories" && (
+          <div className="anim-fadeIn" style={{display:"grid",gap:12}}>
+            {insights.map((ins,i)=>{
+              const t=TEAMS[ins.team];
+              return (
+                <button key={i} onClick={()=>onTeam(ins.team)} className="anim-fadeUp" style={{animationDelay:`${i*.07}s`,
+                  textAlign:"left",borderRadius:16,padding:"16px 18px",overflow:"hidden",position:"relative",
+                  background:t.secondary,boxShadow:"0 2px 10px rgba(0,0,0,.1)"}}>
+                  <div style={{position:"absolute",width:140,height:140,borderRadius:"50%",
+                    border:"24px solid rgba(255,255,255,.1)",right:-40,top:-40}}/>
+                  <div style={{position:"relative",color:t.primary}}>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",opacity:.85}}>{ins.label}</div>
+                    <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:6}}>
+                      <span className="bigtype" style={{fontSize:34}}>{t.code}</span>
+                      <span style={{fontSize:16,fontWeight:700}}>{ins.value}</span>
+                    </div>
+                    <div style={{fontSize:13,marginTop:6,maxWidth:"82%",lineHeight:1.35}}>{ins.sub}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   4. APP SHELL + NAV
+   ============================================================ */
+function App(){
+  const [route,setRoute]=useState({screen:"fixtures"});
+  const openMatch=(id)=>setRoute({screen:"match",id});
+  const openTeam=(code)=>setRoute({screen:"team",code});
+  const go=(screen)=>setRoute({screen});
+
+  let view;
+  if(route.screen==="match") view=<MatchPage fixtureId={route.id} onTeam={openTeam}/>;
+  else if(route.screen==="team") view=<TeamPage code={route.code} onOpen={openMatch}/>;
+  else if(route.screen==="teams") view=<TeamsScreen onTeam={openTeam}/>;
+  else if(route.screen==="stats") view=<StatsScreen onTeam={openTeam}/>;
+  else view=<FixturesScreen onOpen={openMatch}/>;
+
+  const navItems=[
+    {key:"fixtures",icon:"⚽",label:"Matches"},
+    {key:"teams",icon:"🌍",label:"Teams"},
+    {key:"stats",icon:"📊",label:"Insights"},
+  ];
+  const detail = route.screen==="match"||route.screen==="team";
+  const activeKey = route.screen==="match"?"fixtures":route.screen==="team"?"teams":route.screen;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
+      {detail && (
+        <button onClick={()=>setRoute({screen:activeKey})} style={{position:"absolute",top:14,left:14,zIndex:60,
+          width:34,height:34,borderRadius:"50%",background:"rgba(255,255,255,.9)",fontSize:16,
+          display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,.2)"}}>‹</button>
+      )}
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}} key={route.screen+(route.id||route.code||"")}>
+        {view}
+      </div>
+      <nav className="nav">
+        {navItems.map(n=>(
+          <button key={n.key} className={activeKey===n.key?"on":""} onClick={()=>go(n.key)}>
+            <span className="dot">{n.icon}</span>{n.label}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
