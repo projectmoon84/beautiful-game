@@ -21,6 +21,7 @@ const canUseMockData = !import.meta.env.PROD || import.meta.env.VITE_ALLOW_MOCK_
 const mockAllowedInThisBuild =
   canUseMockData &&
   (requestedDataSource === 'mock' || requestedDataSource === 'auto');
+const SUPABASE_LOAD_TIMEOUT_MS = 8_000;
 
 // ── Module-level caches ───────────────────────────────────────────
 // Production starts empty and fills only from Supabase. Local dev can opt into
@@ -91,6 +92,7 @@ async function loadFromSupabase(): Promise<void> {
       funFact:      row.fun_fact,
       form:         (row.form ?? []) as FormResult[],
     }]));
+    console.info(`[dataService] Loaded ${teamCache.size} teams from Supabase`);
   }
 
   if (groupsData && teamsData) {
@@ -204,7 +206,7 @@ export const dataService = {
       await Promise.race([
         loadFromSupabase(),
         new Promise((_, reject) => {
-          globalThis.setTimeout(() => reject(new Error('Supabase fetch timed out')), 2500);
+          globalThis.setTimeout(() => reject(new Error('Supabase fetch timed out')), SUPABASE_LOAD_TIMEOUT_MS);
         }),
       ]);
     } catch (err) {

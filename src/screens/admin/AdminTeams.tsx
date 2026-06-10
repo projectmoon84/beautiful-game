@@ -139,14 +139,18 @@ export default function AdminTeams() {
 
   const primaryText   = form ? (isHex(form.onPrimary)   ? form.onPrimary   : readableOn(form.primaryHex))   : '#ffffff';
   const secondaryText = form ? (isHex(form.onSecondary) ? form.onSecondary : readableOn(form.secondaryHex)) : '#ffffff';
+  const groups = Array.from(new Set(teams.map(team => team.groupId)))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   return (
     <div className="flex gap-6 h-[calc(100vh-96px)]">
 
       {/* ── Team list ── */}
       <nav className="w-48 shrink-0 overflow-y-auto">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">16 Teams</p>
-        {['A', 'B', 'C', 'D'].map(g => (
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+          {teams.length} Teams
+        </p>
+        {groups.map(g => (
           <div key={g} className="mb-4">
             <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest mb-1 pl-2">Group {g}</p>
             {teams.filter(t => t.groupId === g).map(t => (
