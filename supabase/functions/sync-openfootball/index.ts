@@ -262,15 +262,14 @@ Deno.serve(async () => {
     const fixtureRows = [];
     for (const match of matches) {
       const stage = stageForRound(match.round);
-      if (stage !== 'group') continue;
 
       const homeId = teamNameIndex.get(match.team1);
       const awayId = teamNameIndex.get(match.team2);
       const fixtureGroupId = groupId(match.group);
       const venueId = venueByGround.get(match.ground);
 
-      if (!homeId || !awayId || !fixtureGroupId || !venueId) {
-        log.push(`WARN unresolved fixture: ${match.team1} vs ${match.team2} at ${match.ground}`);
+      if (!homeId || !awayId || !venueId || (stage === 'group' && !fixtureGroupId)) {
+        log.push(`WARN unresolved ${stage} fixture: ${match.team1} vs ${match.team2} at ${match.ground}`);
         continue;
       }
 
@@ -282,7 +281,7 @@ Deno.serve(async () => {
         home_team_id: homeId,
         away_team_id: awayId,
         venue_id: venueId,
-        group_id: fixtureGroupId,
+        group_id: stage === 'group' ? fixtureGroupId : null,
         kickoff_utc: toIsoDate(match.date, match.time),
         stage,
         minute: null,
@@ -297,7 +296,7 @@ Deno.serve(async () => {
         .upsert(fixtureRows, { onConflict: 'id' });
       if (fixtureError) throw fixtureError;
     }
-    log.push(`Upserted ${fixtureRows.length} group fixtures; skipped ${lockedFixtureIds.size} admin-locked fixtures`);
+    log.push(`Upserted ${fixtureRows.length} fixtures across all resolved stages; skipped ${lockedFixtureIds.size} admin-locked fixtures`);
 
     return new Response(
       JSON.stringify({ ok: true, groups: groups.length, teams: teamRows.length, fixtures: fixtureRows.length, log }),
