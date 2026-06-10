@@ -34,6 +34,8 @@ let playerCache = new Map<string, Player>();
 let fixtureCache: Fixture[] = [];
 let eventCache: MatchEvent[] = [];
 let insightCache: InsightCard[] = [];
+let standingsCache = new Map<string, GroupTableRow[]>();
+let playerStatCache: PlayerStat[] = [];
 
 function loadMockData(): void {
   teamCache = new Map<string, Team>(DEV_MOCK_TEAMS.map(t => [t.id, t]));
@@ -43,12 +45,16 @@ function loadMockData(): void {
   fixtureCache = [...DEV_MOCK_FIXTURES];
   eventCache = [...DEV_MOCK_EVENTS];
   insightCache = [...DEV_MOCK_INSIGHTS];
+  standingsCache = new Map();
+  playerStatCache = [];
 }
 
 // ── Supabase loader ───────────────────────────────────────────────
 
 async function loadFromSupabase(): Promise<void> {
   if (!supabase) throw new Error('Supabase client not initialised');
+  standingsCache = new Map();
+  playerStatCache = [];
 
   const [
     { data: groupsData,   error: e1 },
@@ -58,6 +64,8 @@ async function loadFromSupabase(): Promise<void> {
     { data: fixturesData, error: e5 },
     { data: eventsData,   error: e6 },
     { data: insightsData, error: e7 },
+    { data: standingsData, error: e8 },
+    { data: playerStatsData, error: e9 },
   ] = await Promise.all([
     supabase.from('groups').select('*'),
     supabase.from('venues').select('*'),
@@ -66,9 +74,11 @@ async function loadFromSupabase(): Promise<void> {
     supabase.from('fixtures').select('*').order('kickoff_utc'),
     supabase.from('match_events').select('*').order('minute'),
     supabase.from('insights').select('*').eq('is_published', true),
+    supabase.from('standings').select('*'),
+    supabase.from('player_stats').select('*'),
   ]);
 
-  if (e1 || e2 || e3 || e4 || e5 || e6 || e7) {
+  if (e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9) {
     throw new Error('Supabase fetch failed');
   }
 
@@ -110,6 +120,38 @@ async function loadFromSupabase(): Promise<void> {
     groupCache = new Map(groups.filter(([, group]) => group.teamIds.length > 0));
   }
 
+  if (standingsData) {
+    const visibleTeamIds = new Set(teamCache.keys());
+    const groupedStandings = new Map<string, GroupTableRow[]>();
+
+    for (const row of standingsData) {
+      if (!row.team_id || !row.group_id || !visibleTeamIds.has(row.team_id)) continue;
+
+      const team = teamCache.get(row.team_id);
+      if (!team) continue;
+
+      const groupRows = groupedStandings.get(row.group_id) ?? [];
+      groupRows.push({
+        team,
+        played:       row.played        ?? 0,
+        won:          row.won           ?? 0,
+        drawn:        row.drawn         ?? 0,
+        lost:         row.lost          ?? 0,
+        goalsFor:     row.goals_for     ?? 0,
+        goalsAgainst: row.goals_against ?? 0,
+        goalDiff:     row.goal_diff     ?? 0,
+        points:       row.points        ?? 0,
+      });
+      groupedStandings.set(row.group_id, groupRows);
+    }
+
+    for (const [groupId, rows] of groupedStandings) {
+      standingsCache.set(groupId, rows.sort(
+        (a, b) => b.points - a.points || b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor
+      ));
+    }
+  }
+
   if (venuesData) {
     venueCache = new Map(venuesData.map(row => [row.id, {
       id:      row.id,
@@ -131,6 +173,27 @@ async function loadFromSupabase(): Promise<void> {
       shirtNumber: row.shirt_number,
       position:    row.position as Position,
     }]));
+  }
+
+  if (playerStatsData) {
+    const visibleTeamIds = new Set(teamCache.keys());
+    playerStatCache = playerStatsData
+      .filter(row => row.player_id && row.player_name && row.team_id && visibleTeamIds.has(row.team_id))
+      .map(row => ({
+        playerId:    row.player_id!,
+        playerName:  row.player_name!,
+        teamId:      row.team_id!,
+        goals:       row.goals        ?? 0,
+        assists:     row.assists      ?? 0,
+        yellowCards: row.yellow_cards ?? 0,
+        redCards:    row.red_cards    ?? 0,
+      }))
+      .sort((a, b) => (
+        b.goals - a.goals ||
+        b.assists - a.assists ||
+        (b.yellowCards + b.redCards) - (a.yellowCards + a.redCards) ||
+        a.playerName.localeCompare(b.playerName)
+      ));
   }
 
   if (fixturesData) {
@@ -272,6 +335,9 @@ export const dataService = {
   // ── Derived: standings (mirrors the SQL standings view) ───────
 
   standingsForGroup(groupId: string): GroupTableRow[] {
+    const cachedRows = standingsCache.get(groupId);
+    if (cachedRows) return cachedRows;
+
     const group = groupCache.get(groupId);
     if (!group) return [];
 
@@ -316,6 +382,8 @@ export const dataService = {
   // ── Derived: player stats (mirrors the SQL player_stats view) ─
 
   playerStats(): PlayerStat[] {
+    if (playerStatCache.length > 0) return playerStatCache;
+
     const stats = new Map<string, PlayerStat>();
 
     for (const e of eventCache) {

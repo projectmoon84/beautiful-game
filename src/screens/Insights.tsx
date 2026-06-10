@@ -22,12 +22,12 @@ const LEADERBOARDS: LeaderboardConfig[] = [
   { id: 'cards', label: 'Cards', caption: 'Discipline watch' },
 ];
 
-const INSIGHT_ORDER = ['Highest scoring', 'Most cards', 'Dark horse', 'Defying the odds'];
+const INSIGHT_ORDER = ['Highest scoring', 'Meanest defence', 'Dark horse', 'Defying the odds'];
 
 export default function Insights() {
   const navigate = useNavigate();
   const stats = useMemo(() => dataService.playerStats(), []);
-  const insights = useMemo(() => buildInsightCards(stats), [stats]);
+  const insights = useMemo(() => buildInsightCards(), []);
   const totalGoals = stats.reduce((sum, stat) => sum + stat.goals, 0);
   const totalAssists = stats.reduce((sum, stat) => sum + stat.assists, 0);
   const totalCards = stats.reduce((sum, stat) => sum + stat.yellowCards + stat.redCards, 0);
@@ -242,9 +242,9 @@ function topRowsForMetric(stats: PlayerStat[], metric: LeaderboardMetric) {
     .slice(0, 5);
 }
 
-function buildInsightCards(stats: PlayerStat[]): InsightDisplayCard[] {
+function buildInsightCards(): InsightDisplayCard[] {
   const defaults = new Map<string, InsightDisplayCard>(
-    buildDefaultInsights(stats).map(card => [card.kind, card]),
+    buildDefaultInsights().map(card => [card.kind, card]),
   );
 
   for (const card of dataService.insights()) {
@@ -261,82 +261,114 @@ function buildInsightCards(stats: PlayerStat[]): InsightDisplayCard[] {
     .filter((card): card is InsightDisplayCard => Boolean(card));
 }
 
-function buildDefaultInsights(stats: PlayerStat[]): InsightDisplayCard[] {
+function buildDefaultInsights(): InsightDisplayCard[] {
   const teams = dataService.allTeams();
-  const fixtures = dataService.allFixtures();
+  const standings = dataService
+    .allGroups()
+    .flatMap(group => dataService.standingsForGroup(group.id));
 
-  const teamGoals = new Map<string, number>();
-  const teamCards = new Map<string, number>();
+  const highestScoringRow = standings
+    .filter(row => row.goalsFor > 0 || row.played > 0)
+    .sort((a, b) => (
+      b.goalsFor - a.goalsFor ||
+      b.goalDiff - a.goalDiff ||
+      b.points - a.points ||
+      a.team.seed - b.team.seed
+    ))[0];
 
-  for (const team of teams) {
-    teamGoals.set(team.id, 0);
-    teamCards.set(team.id, 0);
-  }
+  const meanestDefenceRow = standings
+    .filter(row => row.played > 0)
+    .sort((a, b) => (
+      a.goalsAgainst - b.goalsAgainst ||
+      b.goalDiff - a.goalDiff ||
+      b.points - a.points ||
+      a.team.seed - b.team.seed
+    ))[0];
 
-  for (const fixture of fixtures) {
-    if (fixture.status !== 'finished' && fixture.status !== 'live') continue;
-    teamGoals.set(fixture.homeTeamId, (teamGoals.get(fixture.homeTeamId) ?? 0) + (fixture.homeScore ?? 0));
-    teamGoals.set(fixture.awayTeamId, (teamGoals.get(fixture.awayTeamId) ?? 0) + (fixture.awayScore ?? 0));
-  }
+  const darkHorseRow = standings
+    .filter(row => row.team.seed >= 10 && row.played > 0)
+    .sort(compareStandingOutperformance)[0]
+    ?? standings.filter(row => row.team.seed >= 10).sort((a, b) => a.team.seed - b.team.seed)[0];
 
-  for (const stat of stats) {
-    const cards = stat.yellowCards + stat.redCards;
-    teamCards.set(stat.teamId, (teamCards.get(stat.teamId) ?? 0) + cards);
-  }
+  const defyingOddsRow = standings
+    .filter(row => row.played > 0)
+    .sort(compareOddsOutperformance)[0]
+    ?? standings.filter(row => oddsLongness(row.team.titleOdds) > 0).sort((a, b) => (
+      oddsLongness(b.team.titleOdds) - oddsLongness(a.team.titleOdds) ||
+      a.team.seed - b.team.seed
+    ))[0];
 
-  const highestScoring = topTeamFromMap(teamGoals) ?? teams[0];
-  const mostCards = topTeamFromMap(teamCards) ?? highestScoring;
-  const darkHorse = bestStandingTeam(team => team.seed >= 10) ?? teams.find(team => team.seed >= 10) ?? highestScoring;
-  const defyingOdds = bestStandingTeam(team => team.seed >= 8) ?? darkHorse;
+  const highestScoring = highestScoringRow?.team ?? teams[0];
+  const meanestDefence = meanestDefenceRow?.team ?? teams[0];
+  const darkHorse = darkHorseRow?.team ?? teams.find(team => team.seed >= 10) ?? highestScoring;
+  const defyingOdds = defyingOddsRow?.team ?? darkHorse;
+  const highestScoringGoals = highestScoringRow?.goalsFor ?? 0;
+  const meanestGoalsAgainst = meanestDefenceRow?.goalsAgainst ?? 0;
 
   return [
     {
       kind: 'Highest scoring',
       teamId: highestScoring.id,
-      value: `${teamGoals.get(highestScoring.id) ?? 0} goals`,
+      value: `${highestScoringGoals} goals`,
       blurb: `${highestScoring.name} are setting the attacking pace.`,
-      detail: 'Derived from match scores',
+      detail: 'From standings goals for',
     },
     {
-      kind: 'Most cards',
-      teamId: mostCards.id,
-      value: `${teamCards.get(mostCards.id) ?? 0} cards`,
-      blurb: `${mostCards.name} have been living closest to the referee's notebook.`,
-      detail: 'Yellow and red cards',
+      kind: 'Meanest defence',
+      teamId: meanestDefence.id,
+      value: `${meanestGoalsAgainst} conceded`,
+      blurb: `${meanestDefence.name} have been the hardest side to breach.`,
+      detail: 'From standings goals against',
     },
     {
       kind: 'Dark horse',
       teamId: darkHorse.id,
-      value: `Seed ${darkHorse.seed}`,
+      value: darkHorseRow && darkHorseRow.played > 0 ? `${darkHorseRow.points} pts` : `Seed ${darkHorse.seed}`,
       blurb: `${darkHorse.name} look dangerous outside the top seeds.`,
-      detail: 'Best lower-seed standing',
+      detail: 'Points vs lower seed profile',
     },
     {
       kind: 'Defying the odds',
       teamId: defyingOdds.id,
-      value: defyingOdds.titleOdds,
+      value: defyingOddsRow && defyingOddsRow.played > 0 ? `${defyingOddsRow.points} pts` : defyingOdds.titleOdds,
       blurb: `${defyingOdds.name} are outperforming their pre-tournament profile.`,
-      detail: 'Standing vs seed',
+      detail: 'Points vs title odds',
     },
   ];
 }
 
-function topTeamFromMap(values: Map<string, number>): Team | undefined {
-  const [teamId] = [...values.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
-  return teamId ? dataService.team(teamId) : undefined;
+function compareStandingOutperformance(
+  a: ReturnType<typeof dataService.standingsForGroup>[number],
+  b: ReturnType<typeof dataService.standingsForGroup>[number],
+): number {
+  return (
+    b.points - a.points ||
+    b.goalDiff - a.goalDiff ||
+    b.goalsFor - a.goalsFor ||
+    b.team.seed - a.team.seed
+  );
 }
 
-function bestStandingTeam(filter: (team: Team) => boolean): Team | undefined {
-  const rows = dataService
-    .allGroups()
-    .flatMap(group => dataService.standingsForGroup(group.id))
-    .filter(row => filter(row.team))
-    .sort((a, b) => (
-      b.points - a.points ||
-      b.goalDiff - a.goalDiff ||
-      b.goalsFor - a.goalsFor ||
-      b.team.seed - a.team.seed
-    ));
+function compareOddsOutperformance(
+  a: ReturnType<typeof dataService.standingsForGroup>[number],
+  b: ReturnType<typeof dataService.standingsForGroup>[number],
+): number {
+  const aLongness = oddsLongness(a.team.titleOdds);
+  const bLongness = oddsLongness(b.team.titleOdds);
 
-  return rows[0]?.team;
+  return (
+    b.points - a.points ||
+    bLongness - aLongness ||
+    b.goalDiff - a.goalDiff ||
+    b.goalsFor - a.goalsFor ||
+    b.team.seed - a.team.seed
+  );
+}
+
+function oddsLongness(value: string): number {
+  const fraction = value.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
+  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
+
+  const decimal = Number(value);
+  return Number.isFinite(decimal) ? decimal - 1 : 0;
 }
