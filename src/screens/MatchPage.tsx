@@ -31,7 +31,7 @@ export default function MatchPage() {
   const isScored = fixture.status === 'live' || fixture.status === 'finished';
   const isLive = fixture.status === 'live';
   const isUpcoming = fixture.status === 'scheduled';
-  const awayInk = away.tertiaryHex;
+  const awayInk = away.secondaryHex;
 
   return (
     <div className={['min-h-full bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>
@@ -49,13 +49,13 @@ export default function MatchPage() {
           events={isLive ? events : []}
           minute={fixture.minute ?? 0}
           homeTeamId={home.id}
-          homeColor={home.primaryHex}
+          homeColor={home.secondaryHex}
           awayColor={awayInk}
         />
 
         <div
           className="relative z-10 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
-          style={{ background: home.secondaryHex, color: home.primaryHex }}
+          style={{ background: home.primaryHex, color: home.secondaryHex }}
         >
           <div className="text-[12px] font-medium leading-none">
             {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
@@ -65,7 +65,7 @@ export default function MatchPage() {
             align="home"
             code={home.shortCode}
             marker={isScored ? String(fixture.homeScore ?? 0) : home.flagEmoji}
-            color={home.primaryHex}
+            color={home.secondaryHex}
             scored={isScored}
           />
 
@@ -74,18 +74,18 @@ export default function MatchPage() {
               <InfoRow
                 label="Venue"
                 value={`${venue.stadium}, ${venue.city}`}
-                color={home.primaryHex}
+                color={home.secondaryHex}
               />
             )}
             <InfoRow
               label="Title odds"
               value={home.titleOdds}
-              color={home.primaryHex}
+              color={home.secondaryHex}
             />
             <InfoRow
               label="That's a fact"
               value={home.funFact}
-              color={home.primaryHex}
+              color={home.secondaryHex}
             />
           </div>
         </div>

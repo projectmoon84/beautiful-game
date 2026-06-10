@@ -1,6 +1,5 @@
 import type { Fixture, Team } from '../data/types';
 import { formatDate, formatTime } from '../utils/format';
-import { readableOn } from '../theme/contrast';
 
 interface FixtureCardProps {
   fixture: Fixture;
@@ -24,10 +23,11 @@ interface FixtureCardProps {
 export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onClick }: FixtureCardProps) {
   const isLive = f.status === 'live';
   const isFinished = f.status === 'finished';
-  const homeBg = h.secondaryHex;
-  const awayBg = awayTeamBackground(a);
-  const homeInk = readableOn(homeBg) === '#ffffff' ? '#ffffff' : h.primaryHex;
-  const awayInk = readableOn(awayBg) === '#ffffff' ? '#ffffff' : a.tertiaryHex;
+  const homeBg = h.primaryHex;
+  const awayBg = a.primaryHex;
+  const homeInk = h.secondaryHex;
+  const awayInk = a.secondaryHex;
+  const showScore = isLive || isFinished;
   const homeScore = f.homeScore ?? 0;
   const awayScore = f.awayScore ?? 0;
 
@@ -36,7 +36,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
       onClick={onClick}
       className="relative block h-[130px] w-full overflow-hidden text-left active:brightness-95"
       type="button"
-      aria-label={`${h.name} ${homeScore}, ${a.name} ${awayScore}`}
+      aria-label={showScore ? `${h.name} ${homeScore}, ${a.name} ${awayScore}` : `${h.name} vs ${a.name}`}
     >
       <div className="flex h-full">
 
@@ -58,12 +58,14 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
             >
               {h.shortCode}
             </span>
-            <span
-              className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
-              style={{ color: homeInk }}
-            >
-              {homeScore}
-            </span>
+            {showScore && (
+              <span
+                className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
+                style={{ color: homeInk }}
+              >
+                {homeScore}
+              </span>
+            )}
           </div>
         </div>
 
@@ -79,12 +81,14 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
           </div>
 
           <div className="flex flex-1 items-end gap-2">
-            <span
-              className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
-              style={{ color: awayInk }}
-            >
-              {awayScore}
-            </span>
+            {showScore && (
+              <span
+                className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
+                style={{ color: awayInk }}
+              >
+                {awayScore}
+              </span>
+            )}
             <span
               className="flex flex-1 flex-col justify-end truncate text-right text-[40px] font-bold uppercase leading-[0.9]"
               style={{ color: awayInk }}
@@ -108,8 +112,3 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
   );
 }
 
-function awayTeamBackground(team: Team): string {
-  return team.primaryHex === '#FFFFFF' || team.primaryHex.toLowerCase() === '#ffffff'
-    ? team.secondaryHex
-    : team.primaryHex;
-}

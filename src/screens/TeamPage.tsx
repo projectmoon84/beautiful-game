@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import BigType from '../components/BigType';
@@ -39,10 +39,17 @@ export default function TeamPage() {
   const homeFixture = teamFixtures.find(f => f.homeTeamId === team.id) ?? teamFixtures[0];
   const venue = homeFixture ? dataService.venue(homeFixture.venueId) : undefined;
 
-  const bg = team.secondaryHex;
-  const ink = team.primaryHex;
+  const allFacts = (team.triviaFacts ?? []).length > 0 ? team.triviaFacts! : [team.funFact];
+  const displayFact = useMemo(
+    () => allFacts[Math.floor(Math.random() * allFacts.length)],
+    [team.id], // re-pick when team changes, stable within a visit
+  );
+
+  const bg = team.primaryHex;
+  const ink = team.secondaryHex;
+  const accent = team.tertiaryHex;
   const textureId = pickTexture(team.id);
-  const dividerColor = `${ink}30`;
+  const dividerColor = `${accent}60`;
 
   return (
     <div className="min-h-full flex flex-col relative" style={{ background: bg }}>
@@ -104,13 +111,13 @@ export default function TeamPage() {
             </div>
           </div>
 
-          {/* Fun fact */}
+          {/* Trivia fact */}
           <div className="py-3" style={{ borderBottom: `1px solid ${dividerColor}` }}>
             <p className="text-[10px] font-bold tracking-[0.08em] uppercase mb-1" style={{ color: ink, opacity: 0.55 }}>
               That's a fact
             </p>
             <p className="text-[13px] leading-snug" style={{ color: ink, opacity: 0.85 }}>
-              {team.funFact}
+              {displayFact}
             </p>
           </div>
 
@@ -133,6 +140,7 @@ export default function TeamPage() {
           activeId={activeTab}
           onChange={setActiveTab}
           activeColor={ink}
+          activeLineColor={accent}
           bg={bg}
         />
 

@@ -194,6 +194,7 @@ export type Database = {
           flag_url: string | null
           form: string[]
           fun_fact: string
+          trivia_facts: string[]
           group_id: string
           id: string
           kit_image_url: string | null
@@ -217,6 +218,7 @@ export type Database = {
           flag_url?: string | null
           form?: string[]
           fun_fact: string
+          trivia_facts?: string[]
           group_id: string
           id: string
           kit_image_url?: string | null
@@ -240,6 +242,7 @@ export type Database = {
           flag_url?: string | null
           form?: string[]
           fun_fact?: string
+          trivia_facts?: string[]
           group_id?: string
           id?: string
           kit_image_url?: string | null

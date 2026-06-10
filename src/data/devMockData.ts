@@ -76,6 +76,7 @@ export const DEV_MOCK_TEAMS: Team[] = TEAM_INPUTS.map((team, index) => ({
   ...team,
   groupId: GROUP_IDS[Math.floor(index / 4)],
   form: formFor(index),
+
 }));
 
 export const DEV_MOCK_VENUES: Venue[] = [

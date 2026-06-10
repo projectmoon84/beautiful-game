@@ -7,8 +7,10 @@ interface SubTabsProps {
   tabs: Tab[];
   activeId: string;
   onChange: (id: string) => void;
-  /** Colour used for active underline + active text. Defaults to #14161a. */
+  /** Colour used for active text. Defaults to #14161a. */
   activeColor?: string;
+  /** Colour used for the active underline. Defaults to activeColor. */
+  activeLineColor?: string;
   /** Inactive text colour. Defaults to #14161a at 35% opacity. */
   inactiveColor?: string;
   /** Background of the tab bar. Defaults to transparent. */
@@ -24,9 +26,11 @@ export default function SubTabs({
   activeId,
   onChange,
   activeColor = '#14161a',
+  activeLineColor,
   inactiveColor,
   bg,
 }: SubTabsProps) {
+  const lineColor = activeLineColor ?? activeColor;
   const inactive = inactiveColor ?? `${activeColor}59`; // 35% opacity fallback
 
   return (
@@ -48,11 +52,10 @@ export default function SubTabs({
             style={{ color: isActive ? activeColor : inactive }}
           >
             {tab.label}
-            {/* Active underline */}
             {isActive && (
               <span
                 className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[2.5px] w-10 rounded-full"
-                style={{ background: activeColor }}
+                style={{ background: lineColor }}
               />
             )}
           </button>

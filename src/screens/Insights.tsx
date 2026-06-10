@@ -136,7 +136,7 @@ function StatLeaderboard({
         {rows.length > 0 ? rows.map((row, index) => {
           const team = dataService.team(row.stat.teamId);
           const teamColor = team?.primaryHex ?? '#1a1a1a';
-          const teamText = readableOn(teamColor);
+          const teamText = team?.secondaryHex ?? '#ffffff';
           const isMostlyFilled = row.value / maxValue >= 0.7;
           const width = `${Math.max(18, (row.value / maxValue) * 100)}%`;
 
@@ -192,7 +192,7 @@ function InsightCard({
   onClick: () => void;
 }) {
   const bg = team.primaryHex;
-  const fg = team.onPrimary ?? readableOn(bg);
+  const fg = team.secondaryHex;
   const accent = team.tertiaryHex;
 
   return (

@@ -21,6 +21,7 @@ export interface Team {
   onPrimary?: string;   // computed by readableOn() if absent
   onSecondary?: string;
   funFact: string;
+  triviaFacts?: string[];
   form: FormResult[];   // last 5, most recent first
 }
 

@@ -263,7 +263,7 @@ const ShareCard = forwardRef<HTMLDivElement, {
   stickers,
   onStickerDragEnd,
 }, ref) {
-  const awayInk = away.tertiaryHex;
+  const awayInk = away.secondaryHex;
 
   return (
     <div
@@ -271,7 +271,7 @@ const ShareCard = forwardRef<HTMLDivElement, {
       className="relative h-[675px] w-[540px] overflow-hidden bg-white font-sans"
     >
       <div className="absolute inset-0 flex">
-        <div className="flex flex-1 flex-col p-4" style={{ background: home.secondaryHex, color: home.primaryHex }}>
+        <div className="flex flex-1 flex-col p-4" style={{ background: home.primaryHex, color: home.secondaryHex }}>
           <div className="text-[12px] font-medium leading-none">
             {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
           </div>
@@ -428,13 +428,13 @@ function SharePitch({
             </div>
             {isHome ? (
               <div className="absolute right-[172px] top-1.5 flex items-start justify-end gap-4">
-                <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={home.primaryHex} align="right" />
+                <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={home.secondaryHex} align="right" />
                 <ShareEventIcon type={item.event.type} />
               </div>
             ) : (
               <div className="absolute left-[172px] top-1.5 flex items-start justify-start gap-4">
                 <ShareEventIcon type={item.event.type} />
-                <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={away.tertiaryHex} align="left" />
+                <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={away.secondaryHex} align="left" />
               </div>
             )}
           </div>

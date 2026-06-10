@@ -100,6 +100,7 @@ async function loadFromSupabase(): Promise<void> {
       onPrimary:    row.on_primary    ?? undefined,
       onSecondary:  row.on_secondary  ?? undefined,
       funFact:      row.fun_fact,
+      triviaFacts:  (row.trivia_facts ?? []) as string[],
       form:         (row.form ?? []) as FormResult[],
     }]));
     console.info(`[dataService] Loaded ${teamCache.size} teams from Supabase`);

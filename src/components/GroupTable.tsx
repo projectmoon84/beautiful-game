@@ -32,17 +32,17 @@ export default function GroupTable({
         onClick={onGroupClick}
         disabled={!onGroupClick}
         className={[
-          'flex w-full items-center gap-2 px-4 py-3 text-left',
+          'flex w-full items-center gap-3 px-5 py-3 text-left',
           onGroupClick ? 'active:opacity-70' : 'cursor-default',
         ].join(' ')}
         style={{ color: headerColor }}
       >
-        <span className="flex-1 text-[12px] font-semibold uppercase leading-none">
+        <span className="flex-1 text-[13px] font-bold uppercase tracking-widest leading-none">
           {label}
         </span>
-        <div className="flex shrink-0 items-center gap-2 text-[12px] font-semibold uppercase leading-none">
+        <div className="flex shrink-0 items-center gap-3 text-[11px] font-bold uppercase tracking-wider leading-none opacity-60">
           {cols.map(col => (
-            <span key={col} className={col === 'PTS' ? 'w-7 text-center' : 'w-5 text-center'}>
+            <span key={col} className={col === 'PTS' ? 'w-9 text-center' : 'w-7 text-center'}>
               {col}
             </span>
           ))}
@@ -60,19 +60,24 @@ export default function GroupTable({
             key={row.team.id}
             type={onTeamClick ? 'button' : undefined}
             onClick={onTeamClick ? () => onTeamClick(row.team.id) : undefined}
-            className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left transition-[filter]"
+            className="flex min-h-[68px] w-full items-center gap-3 px-5 py-4 text-left active:brightness-95"
             style={{ background: row.team.primaryHex, color: row.team.secondaryHex }}
           >
-            <span className="flex min-w-0 flex-1 items-center gap-2 text-[14px] font-semibold leading-none">
-              <span className="leading-none">{row.team.flagEmoji}</span>
-              <span className="truncate">{row.team.name}</span>
+            <span className="flex min-w-0 flex-1 items-center gap-3 leading-none">
+              <span className="text-[24px] leading-none">{row.team.flagEmoji}</span>
+              <span className="truncate text-[17px] font-bold">{row.team.name}</span>
             </span>
 
-            <div className="flex shrink-0 items-center gap-2 text-[12px] font-semibold uppercase leading-none">
+            <div className="flex shrink-0 items-center gap-3 leading-none">
               {statValues.map((value, index) => {
                 const isLast = index === statValues.length - 1;
                 return (
-                  <span key={`${row.team.id}-${index}`} className={isLast ? 'w-7 text-center' : 'w-5 text-center'}>
+                  <span
+                    key={`${row.team.id}-${index}`}
+                    className={isLast
+                      ? 'w-9 text-center text-[20px] font-black'
+                      : 'w-7 text-center text-[15px] font-semibold opacity-80'}
+                  >
                     {value}
                   </span>
                 );

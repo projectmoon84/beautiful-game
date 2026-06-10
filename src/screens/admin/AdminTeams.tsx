@@ -12,6 +12,7 @@ interface TeamForm {
   onPrimary:    string;
   onSecondary:  string;
   funFact:      string;
+  triviaFacts:  string[];
   seed:         number;
   titleOdds:    string;
   textureId:    string;
@@ -25,10 +26,72 @@ function initForm(t: Team, textureId: string): TeamForm {
     onPrimary:    t.onPrimary   ?? '',
     onSecondary:  t.onSecondary ?? '',
     funFact:      t.funFact,
+    triviaFacts:  t.triviaFacts ?? [],
     seed:         t.seed,
     titleOdds:    t.titleOdds,
     textureId,
   };
+}
+
+function TriviaFactsEditor({
+  facts,
+  onChange,
+}: {
+  facts: string[];
+  onChange: (facts: string[]) => void;
+}) {
+  function update(index: number, value: string) {
+    const next = [...facts];
+    next[index] = value;
+    onChange(next);
+  }
+
+  function remove(index: number) {
+    onChange(facts.filter((_, i) => i !== index));
+  }
+
+  function add() {
+    onChange([...facts, '']);
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+          Trivia facts
+        </label>
+        <span className="text-[10px] text-gray-400">{facts.length} fact{facts.length !== 1 ? 's' : ''} · shown at random</span>
+      </div>
+      <div className="flex flex-col gap-2">
+        {facts.map((fact, i) => (
+          <div key={i} className="flex gap-2 items-start">
+            <textarea
+              value={fact}
+              onChange={e => update(i, e.target.value)}
+              rows={2}
+              placeholder={`Fact ${i + 1}`}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-gray-400"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="mt-1 text-gray-300 hover:text-red-400 text-lg leading-none"
+              aria-label="Remove fact"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={add}
+          className="self-start text-[11px] font-semibold text-gray-400 hover:text-gray-700 border border-dashed border-gray-200 hover:border-gray-400 rounded-lg px-3 py-1.5 transition-colors"
+        >
+          + Add fact
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const isHex = (v: string) => /^#[0-9A-Fa-f]{6}$/.test(v);
@@ -110,6 +173,7 @@ export default function AdminTeams() {
       on_primary:       form.onPrimary   || null,
       on_secondary:     form.onSecondary || null,
       fun_fact:         form.funFact,
+      trivia_facts:     form.triviaFacts,
       seed:             form.seed,
       title_odds:       form.titleOdds,
       texture_id:       form.textureId   || null,
@@ -128,6 +192,7 @@ export default function AdminTeams() {
         onPrimary:    form.onPrimary   || undefined,
         onSecondary:  form.onSecondary || undefined,
         funFact:      form.funFact,
+        triviaFacts:  form.triviaFacts,
         seed:         form.seed,
         titleOdds:    form.titleOdds,
       };
@@ -244,14 +309,18 @@ export default function AdminTeams() {
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Team info</h3>
                 <div className="flex flex-col gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Fun fact</label>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Default fact <span className="normal-case font-normal">(from sync)</span></label>
                     <textarea
                       value={form.funFact}
                       onChange={e => setField('funFact', e.target.value)}
-                      rows={3}
+                      rows={2}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-gray-400"
                     />
                   </div>
+                  <TriviaFactsEditor
+                    facts={form.triviaFacts ?? []}
+                    onChange={v => setForm(f => f ? { ...f, triviaFacts: v } : f)}
+                  />
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Seed</label>
