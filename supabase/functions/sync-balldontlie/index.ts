@@ -86,6 +86,17 @@ interface BDEvent {
   player_out?: BDPlayer | null;
 }
 
+interface BDFuture {
+  id: number;
+  market_type: string;
+  market_name?: string | null;
+  subject?: BDTeam | null;
+  vendor?: string | null;
+  american_odds?: number | null;
+  decimal_odds?: number | null;
+  updated_at?: string | null;
+}
+
 interface DbFixture {
   id: string;
   home_team_id: string;
@@ -255,6 +266,36 @@ function eventPlayer(event: BDEvent): BDPlayer | null | undefined {
   return event.player;
 }
 
+function greatestCommonDivisor(a: number, b: number): number {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+
+  while (y !== 0) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+
+  return x || 1;
+}
+
+function americanOddsToFractional(americanOdds: number): string | null {
+  if (!Number.isFinite(americanOdds) || americanOdds === 0) return null;
+
+  const numerator = americanOdds > 0 ? Math.round(americanOdds) : 100;
+  const denominator = americanOdds > 0 ? 100 : Math.abs(Math.round(americanOdds));
+  const divisor = greatestCommonDivisor(numerator, denominator);
+
+  return `${numerator / divisor}/${denominator / divisor}`;
+}
+
+function futuresPriority(future: BDFuture): number {
+  const vendor = future.vendor?.toLowerCase();
+  if (vendor === 'draftkings') return 0;
+  if (vendor === 'fanduel') return 1;
+  return 2;
+}
+
 function eventToRow(event: BDEvent, fixture: DbFixture, syncedAt: string): { row: EventRow; players: PlayerRow[] } | null {
   const type = mapEventType(event);
   const minute = eventMinute(event);
@@ -310,6 +351,80 @@ Deno.serve(async () => {
     }
 
     log.push(`Mapped ${bdlTeamToOurs.size}/${teams.length} teams by abbreviation/country_code`);
+
+    log.push('Fetching BALLDONTLIE FIFA futures odds...');
+    await sleep(REQUEST_PAUSE_MS);
+    const futures = await bdFetchAll<BDFuture>(`/odds/futures?seasons[]=${SEASON}`, log);
+    const titleOddsByTeam = new Map<string, { odds: string; priority: number }>();
+
+    for (const future of futures) {
+      if (future.market_type !== 'outright') continue;
+
+      const teamId = teamCode(future.subject);
+      const odds = typeof future.american_odds === 'number'
+        ? americanOddsToFractional(future.american_odds)
+        : null;
+
+      if (!teamId || !odds) continue;
+
+      const priority = futuresPriority(future);
+      const existing = titleOddsByTeam.get(teamId);
+
+      if (!existing || priority < existing.priority) {
+        titleOddsByTeam.set(teamId, { odds, priority });
+      }
+    }
+
+    if (titleOddsByTeam.size > 0) {
+      const { data: dbTeams, error: dbTeamsError } = await supabaseAdmin
+        .from('teams')
+        .select('id, edited_by_admin');
+      if (dbTeamsError) throw dbTeamsError;
+
+      const teamOddsRows = (dbTeams ?? [])
+        .filter((team: { id: string; edited_by_admin: boolean }) => !team.edited_by_admin)
+        .map((team: { id: string; edited_by_admin: boolean }) => {
+          const titleOdds = titleOddsByTeam.get(team.id)?.odds;
+          if (!titleOdds) return null;
+          return {
+            id: team.id,
+            title_odds: titleOdds,
+            source: SOURCE,
+            updated_at: syncedAt,
+          };
+        })
+        .filter((row: { id: string; title_odds: string; source: string; updated_at: string } | null): row is {
+          id: string;
+          title_odds: string;
+          source: string;
+          updated_at: string;
+        } => row !== null);
+
+      if (teamOddsRows.length > 0) {
+        let oddsUpdated = 0;
+
+        for (const row of teamOddsRows) {
+          const { error } = await supabaseAdmin
+            .from('teams')
+            .update({
+              title_odds: row.title_odds,
+              source: row.source,
+              updated_at: row.updated_at,
+            })
+            .eq('id', row.id)
+            .eq('edited_by_admin', false);
+
+          if (error) log.push(`WARN title odds update ${row.id}: ${error.message}`);
+          else oddsUpdated++;
+        }
+
+        log.push(`Updated ${oddsUpdated} team title odds`);
+      } else {
+        log.push('No matching non-admin team title odds to update');
+      }
+    } else {
+      log.push('No title odds returned from futures endpoint');
+    }
 
     const { data: lockedPlayers, error: lockedPlayersError } = await supabaseAdmin
       .from('players')

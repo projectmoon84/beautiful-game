@@ -192,9 +192,11 @@ export type Database = {
           secondary_hex: string
           seed: number
           short_code: string
+          source: string | null
           tertiary_hex: string
           texture_id: string | null
           title_odds: string
+          updated_at: string
         }
         Insert: {
           edited_by_admin?: boolean
@@ -213,9 +215,11 @@ export type Database = {
           secondary_hex: string
           seed: number
           short_code: string
+          source?: string | null
           tertiary_hex: string
           texture_id?: string | null
           title_odds: string
+          updated_at?: string
         }
         Update: {
           edited_by_admin?: boolean
@@ -234,9 +238,11 @@ export type Database = {
           secondary_hex?: string
           seed?: number
           short_code?: string
+          source?: string | null
           tertiary_hex?: string
           texture_id?: string | null
           title_odds?: string
+          updated_at?: string
         }
         Relationships: []
       }

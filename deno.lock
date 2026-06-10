@@ -1,0 +1,37 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@supabase/functions-js@^0.0.0-automated": "0.0.0-jsr-test.1",
+    "jsr:@supabase/supabase-js@2": "2.105.4"
+  },
+  "jsr": {
+    "@supabase/functions-js@0.0.0-jsr-test.1": {
+      "integrity": "b1b37924af1f0011b4753201e1585a37b030e996c6682492e02575eb27d902b2"
+    },
+    "@supabase/supabase-js@2.105.4": {
+      "integrity": "9917385444fbb10ed75652c01e7f5b3beda999caffcbc3e93f4f40c087a325a7",
+      "dependencies": [
+        "jsr:@supabase/functions-js"
+      ]
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@supabase/supabase-js@^2.108.0",
+        "npm:@tailwindcss/vite@4",
+        "npm:@types/react-dom@19",
+        "npm:@types/react@19",
+        "npm:@vitejs/plugin-react@4",
+        "npm:html-to-image@^1.11.13",
+        "npm:motion@12",
+        "npm:react-dom@19",
+        "npm:react-router-dom@7",
+        "npm:react@19",
+        "npm:tailwindcss@4",
+        "npm:typescript@^5.6.0",
+        "npm:vite@6"
+      ]
+    }
+  }
+}
