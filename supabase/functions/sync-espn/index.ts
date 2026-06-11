@@ -216,7 +216,7 @@ function playerShirtNumber(athlete: EspnAthlete | null): number {
 }
 
 function eventId(fixtureId: string, detail: EspnDetail, type: string, teamCode: string, athleteId: string, index: number): string {
-  const clock = detail.clock?.value ?? detail.clock?.displayValue ?? detail.displayTime ?? index;
+  const clock = eventMinute(detail) ?? detail.clock?.displayValue ?? detail.displayTime ?? index;
   const espnType = detail.type?.id ?? detail.type?.text ?? type;
   return `${fixtureId}-espn-${clock}-${teamCode}-${espnType}-${athleteId}`;
 }
@@ -423,9 +423,17 @@ Deno.serve(async (request) => {
       }
 
       if (eventRows.length > 0) {
-        const { error } = await supabaseAdmin.from('match_events').upsert(eventRows, { onConflict: 'id' });
+        const { error: deleteError } = await supabaseAdmin
+          .from('match_events')
+          .delete()
+          .eq('fixture_id', fixtureId)
+          .eq('source', SOURCE);
+        if (deleteError) throw deleteError;
+
+        const uniqueEvents = [...new Map(eventRows.map(event => [event.id, event])).values()];
+        const { error } = await supabaseAdmin.from('match_events').upsert(uniqueEvents, { onConflict: 'id' });
         if (error) throw error;
-        eventsInserted += eventRows.length;
+        eventsInserted += uniqueEvents.length;
       }
     }
 
