@@ -221,8 +221,8 @@ Deno.serve(async (request) => {
   let apiRequests = 0;
   let fixtureUpdates = 0;
   let eventFetches = 0;
-  let eventsInserted = 0;
   let possibleEvents = 0;
+  let mappableEvents = 0;
 
   try {
     if (body.reason) log.push(`Reason: ${body.reason}`);
@@ -289,6 +289,9 @@ Deno.serve(async (request) => {
         source: SOURCE,
         updated_at: syncedAt,
       });
+      log.push(
+        `ESPN update ${dbFixture.id}: ${mappedStatus} ${minuteFromStatus(status, mappedStatus) ?? '-'}' ${scoreNumber(home?.score) ?? '-'}-${scoreNumber(away?.score) ?? '-'}`,
+      );
       espnByFixtureId.set(dbFixture.id, event);
     }
 
@@ -333,45 +336,14 @@ Deno.serve(async (request) => {
       possibleEvents += details.length;
       log.push(`ESPN req ${apiRequests}: summary ${event.id} -> ${details.length} details`);
 
-      const rows = [];
-      const playerRows = [];
       for (const [index, detail] of details.entries()) {
         const type = mapEventType(detail);
         const minute = eventMinute(detail);
         const teamCode = detail.team?.abbreviation?.toUpperCase();
         const athlete = detailAthlete(detail);
         if (!type || !minute || !teamCode || !athlete?.name) continue;
-
-        const playerId = athlete.id ? `${teamCode}-ESPN-${athlete.id}` : `${teamCode}-ESPN-${index}`;
-        playerRows.push({
-          id: playerId,
-          team_id: teamCode,
-          name: athlete.name,
-          shirt_number: 99,
-          position: 'MID',
-          source: SOURCE,
-          updated_at: syncedAt,
-        });
-        rows.push({
-          id: `${fixtureId}-espn-${index}`,
-          fixture_id: fixtureId,
-          minute,
-          type,
-          team_id: teamCode,
-          player_id: playerId,
-          assist_player_id: null,
-          source: SOURCE,
-          updated_at: syncedAt,
-        });
-      }
-
-      if (playerRows.length > 0) {
-        await supabaseAdmin.from('players').upsert(playerRows, { onConflict: 'id', ignoreDuplicates: true });
-      }
-      if (rows.length > 0) {
-        const { error } = await supabaseAdmin.from('match_events').upsert(rows, { onConflict: 'id' });
-        if (error) log.push(`WARN events ${fixtureId}: ${error.message}`);
-        else eventsInserted += rows.length;
+        mappableEvents++;
+        log.push(`Mapped ESPN detail candidate ${fixtureId} #${index}: ${minute}' ${type} ${teamCode} ${athlete.name}`);
       }
     }
 
@@ -383,10 +355,11 @@ Deno.serve(async (request) => {
         reqCount: apiRequests,
         counts: {
           apiRequests,
+          scoreboardEvents: events.length,
           fixtureUpdates,
           eventFetches,
           possibleEvents,
-          eventsInserted,
+          mappableEvents,
         },
         log,
       }),
@@ -402,10 +375,11 @@ Deno.serve(async (request) => {
         reqCount: apiRequests,
         counts: {
           apiRequests,
+          scoreboardEvents: 0,
           fixtureUpdates,
           eventFetches,
           possibleEvents,
-          eventsInserted,
+          mappableEvents,
         },
         log,
       }),
