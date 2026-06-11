@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import GroupTable from '../components/GroupTable';
@@ -12,11 +12,41 @@ export default function MatchPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [shareOpen, setShareOpen] = useState(false);
+  const [, setLiveRefreshTick] = useState(0);
 
   const isLiveDemo = id === 'live-demo';
   const fixture = isLiveDemo ? LIVE_DEMO_FIXTURE : id ? dataService.fixture(id) : undefined;
   const home = fixture ? dataService.team(fixture.homeTeamId) : undefined;
   const away = fixture ? dataService.team(fixture.awayTeamId) : undefined;
+  const shouldRefreshLiveMatch = Boolean(fixture && !isLiveDemo && fixture.status === 'live');
+
+  useEffect(() => {
+    if (!fixture || !shouldRefreshLiveMatch) return;
+
+    let cancelled = false;
+    async function refresh() {
+      const changed = await dataService.refreshMatch(fixture!.id);
+      if (!cancelled && changed) {
+        setLiveRefreshTick(tick => tick + 1);
+      }
+    }
+
+    refresh();
+    const interval = window.setInterval(refresh, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [fixture?.id, shouldRefreshLiveMatch]);
+
+  const homeFact = useMemo(
+    () => home ? randomTeamFact(home) : '',
+    [fixture?.id, home?.id],
+  );
+  const awayFact = useMemo(
+    () => away ? randomTeamFact(away) : '',
+    [fixture?.id, away?.id],
+  );
 
   if (!fixture || !home || !away) {
     return (
@@ -33,14 +63,6 @@ export default function MatchPage() {
   const isLive = fixture.status === 'live';
   const isUpcoming = fixture.status === 'scheduled';
   const awayInk = away.secondaryHex;
-  const homeFact = useMemo(
-    () => randomTeamFact(home),
-    [fixture.id, home.id],
-  );
-  const awayFact = useMemo(
-    () => randomTeamFact(away),
-    [fixture.id, away.id],
-  );
 
   return (
     <div className={['min-h-full bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>

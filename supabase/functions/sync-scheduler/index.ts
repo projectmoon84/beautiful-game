@@ -1,7 +1,7 @@
 /**
  * sync-scheduler
  *
- * Runs every 5 minutes via pg_cron. It:
+ * Runs every minute via pg_cron. It:
  * - plans the current UK day once 04:00 UK has passed
  * - creates evenly-spread sync jobs for each fixture on that UK date
  * - executes due jobs in small batches against the live provider sync
@@ -13,8 +13,9 @@ import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 const UK_TIME_ZONE = 'Europe/London';
 const PROJECT_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const RUNNER_BATCH_SIZE = 3;
-const DAILY_PROVIDER_SYNC_CAP = Number(Deno.env.get('SYNC_DAILY_PROVIDER_CAP') ?? 36);
+const RUNNER_BATCH_SIZE = Number(Deno.env.get('SYNC_RUNNER_BATCH_SIZE') ?? 12);
+const ESPN_DAILY_SYNC_CAP = Number(Deno.env.get('ESPN_DAILY_SYNC_CAP') ?? 1000);
+const API_FOOTBALL_DAILY_SYNC_CAP = Number(Deno.env.get('API_FOOTBALL_DAILY_SYNC_CAP') ?? Deno.env.get('SYNC_DAILY_PROVIDER_CAP') ?? 36);
 
 type SyncJob = {
   id: string;
@@ -81,24 +82,17 @@ function isoAfter(minutes: number): string {
 }
 
 function plannedFixtureJobs(fixture: FixtureRow, ukDate: string): PlannedJob[] {
-  const offsets: Array<{ kind: string; minutes: number; priority: number }> = [
+  const preMatchOffsets: Array<{ kind: string; minutes: number; priority: number }> = [
     { kind: 'pre_t60', minutes: -60, priority: 30 },
     { kind: 'pre_t15', minutes: -15, priority: 25 },
     { kind: 'pre_t02', minutes: -2, priority: 20 },
-    { kind: 'live_08', minutes: 8, priority: 10 },
-    { kind: 'live_16', minutes: 16, priority: 10 },
-    { kind: 'live_24', minutes: 24, priority: 10 },
-    { kind: 'live_32', minutes: 32, priority: 10 },
-    { kind: 'live_40', minutes: 40, priority: 10 },
-    { kind: 'ht_plus_08', minutes: 53, priority: 5 },
-    { kind: 'second_08', minutes: 68, priority: 10 },
-    { kind: 'second_16', minutes: 76, priority: 10 },
-    { kind: 'second_24', minutes: 84, priority: 10 },
-    { kind: 'second_32', minutes: 92, priority: 10 },
-    { kind: 'second_40', minutes: 100, priority: 10 },
-    { kind: 'ft_est_plus_08', minutes: 121, priority: 5 },
-    { kind: 'ft_est_plus_15', minutes: 128, priority: 5 },
   ];
+  const liveOffsets = Array.from({ length: 131 }, (_, minute) => ({
+    kind: `live_m${String(minute).padStart(3, '0')}`,
+    minutes: minute,
+    priority: minute === 0 ? 5 : 10,
+  }));
+  const offsets = [...preMatchOffsets, ...liveOffsets];
 
   return offsets.map(offset => ({
     dedupe_key: `${fixture.id}:${offset.kind}`,
@@ -186,12 +180,18 @@ async function planTodayIfNeeded(now: Date, log: string[]) {
   log.push(`Planned ${jobs.length} jobs for ${todayFixtures.length} fixtures on ${ukDate}`);
 }
 
-async function providerJobsDoneToday(ukDate: string): Promise<number> {
+function capForProvider(provider: string): number {
+  if (provider === 'espn') return ESPN_DAILY_SYNC_CAP;
+  if (provider === 'api-football') return API_FOOTBALL_DAILY_SYNC_CAP;
+  return Number.POSITIVE_INFINITY;
+}
+
+async function providerJobsDoneToday(ukDate: string, provider: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from('sync_schedule_jobs')
     .select('id', { count: 'exact', head: true })
     .eq('uk_date', ukDate)
-    .in('provider', ['espn', 'api-football'])
+    .eq('provider', provider)
     .eq('status', 'done');
   if (error) throw error;
   return count ?? 0;
@@ -212,7 +212,7 @@ function dataCountsFromPayload(payload: Record<string, unknown>): Record<string,
   }
 
   const extracted: Record<string, unknown> = {};
-  for (const key of ['reqCount', 'groups', 'teams', 'players', 'fixtures', 'eventsInserted', 'fixtureUpdates', 'squadsFetched']) {
+  for (const key of ['reqCount', 'groups', 'teams', 'players', 'fixtures', 'eventsInserted', 'fixtureUpdates', 'squadsFetched', 'scoreboardEvents', 'eventFetches', 'possibleEvents', 'mappableEvents']) {
     const value = payload[key];
     if (typeof value === 'number') extracted[key] = value;
   }
@@ -394,11 +394,12 @@ async function runDueJobs(now: Date, log: string[]) {
   }
 
   for (const job of jobs) {
-    const providerDone = ['espn', 'api-football'].includes(job.provider)
-      ? await providerJobsDoneToday(job.uk_date)
+    const providerCap = capForProvider(job.provider);
+    const providerDone = Number.isFinite(providerCap)
+      ? await providerJobsDoneToday(job.uk_date, job.provider)
       : 0;
-    if (providerDone >= DAILY_PROVIDER_SYNC_CAP) {
-      log.push(`Daily provider cap reached for ${job.uk_date}: ${providerDone}/${DAILY_PROVIDER_SYNC_CAP}`);
+    if (providerDone >= providerCap) {
+      log.push(`Daily ${job.provider} cap reached for ${job.uk_date}: ${providerDone}/${providerCap}`);
       break;
     }
 
@@ -415,7 +416,7 @@ async function runDueJobs(now: Date, log: string[]) {
           reason: job.kind,
           fixtureId: job.fixture_id,
           skipSquads: true,
-          maxEvents: 4,
+          maxEvents: job.provider === 'espn' ? 0 : 4,
         };
       const runLogId = await createRunLog(job, requestBody);
 
