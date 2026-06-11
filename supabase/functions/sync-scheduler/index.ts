@@ -106,7 +106,7 @@ function plannedFixtureJobs(fixture: FixtureRow, ukDate: string): PlannedJob[] {
     uk_date: ukDate,
     run_at: addMinutes(fixture.kickoff_utc, offset.minutes),
     kind: offset.kind,
-    provider: 'api-football',
+    provider: 'espn',
     priority: offset.priority,
     status: 'pending',
   }));
@@ -191,7 +191,7 @@ async function providerJobsDoneToday(ukDate: string): Promise<number> {
     .from('sync_schedule_jobs')
     .select('id', { count: 'exact', head: true })
     .eq('uk_date', ukDate)
-    .eq('provider', 'api-football')
+    .in('provider', ['espn', 'api-football'])
     .eq('status', 'done');
   if (error) throw error;
   return count ?? 0;
@@ -230,7 +230,7 @@ function numberFromCounts(counts: Record<string, unknown>, key: string): number 
 }
 
 async function applyClockFallback(job: SyncJob, payload: Record<string, unknown>, log: string[]) {
-  if (job.provider !== 'api-football' || !job.fixture_id) return;
+  if (!['espn', 'api-football'].includes(job.provider) || !job.fixture_id) return;
 
   const counts = dataCountsFromPayload(payload);
   if (numberFromCounts(counts, 'fixtureUpdates') > 0) return;
@@ -353,7 +353,7 @@ async function ensurePostFinishJobs(job: SyncJob, log: string[]) {
       uk_date: job.uk_date,
       run_at: isoAfter(8),
       kind: 'ft_actual_plus_08',
-      provider: 'api-football',
+      provider: 'espn',
       priority: 3,
       status: 'pending',
     },
@@ -363,7 +363,7 @@ async function ensurePostFinishJobs(job: SyncJob, log: string[]) {
       uk_date: job.uk_date,
       run_at: isoAfter(15),
       kind: 'ft_actual_plus_15',
-      provider: 'api-football',
+      provider: 'espn',
       priority: 3,
       status: 'pending',
     },
@@ -394,7 +394,7 @@ async function runDueJobs(now: Date, log: string[]) {
   }
 
   for (const job of jobs) {
-    const providerDone = job.provider === 'api-football'
+    const providerDone = ['espn', 'api-football'].includes(job.provider)
       ? await providerJobsDoneToday(job.uk_date)
       : 0;
     if (providerDone >= DAILY_PROVIDER_SYNC_CAP) {
@@ -420,9 +420,12 @@ async function runDueJobs(now: Date, log: string[]) {
       const runLogId = await createRunLog(job, requestBody);
 
       try {
-        const result = job.provider === 'openfootball'
-          ? await invokeFunction('sync-openfootball', requestBody)
-          : await invokeFunction('sync-api-football', requestBody);
+        const functionName = job.provider === 'openfootball'
+          ? 'sync-openfootball'
+          : job.provider === 'espn'
+            ? 'sync-espn'
+            : 'sync-api-football';
+        const result = await invokeFunction(functionName, requestBody);
         await applyClockFallback(job, result.payload, log);
 
         await finishRunLog(runLogId, {

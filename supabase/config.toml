@@ -12,3 +12,6 @@ verify_jwt = false   # triggered by cron scheduler — no user JWT
 
 [functions.sync-api-football]
 verify_jwt = false   # triggered by cron scheduler — no user JWT
+
+[functions.sync-espn]
+verify_jwt = false   # triggered by cron scheduler — no user JWT
