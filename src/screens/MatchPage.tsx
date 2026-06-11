@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import GroupTable from '../components/GroupTable';
 import ShareComposer from '../components/ShareComposer';
 import { LIVE_DEMO_EVENTS, LIVE_DEMO_FIXTURE } from '../data/liveDemo';
 import { formatDate, formatTime } from '../utils/format';
+import { randomTeamFact } from '../utils/facts';
 import type { GroupTableRow, MatchEvent } from '../data/types';
 
 export default function MatchPage() {
@@ -32,6 +33,14 @@ export default function MatchPage() {
   const isLive = fixture.status === 'live';
   const isUpcoming = fixture.status === 'scheduled';
   const awayInk = away.secondaryHex;
+  const homeFact = useMemo(
+    () => randomTeamFact(home),
+    [fixture.id, home.id],
+  );
+  const awayFact = useMemo(
+    () => randomTeamFact(away),
+    [fixture.id, away.id],
+  );
 
   return (
     <div className={['min-h-full bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>
@@ -89,7 +98,7 @@ export default function MatchPage() {
             />
             <InfoRow
               label="That's a fact"
-              value={home.funFact}
+              value={homeFact}
               color={home.secondaryHex}
             />
           </div>
@@ -131,7 +140,7 @@ export default function MatchPage() {
             />
             <InfoRow
               label="That's a fact"
-              value={away.funFact}
+              value={awayFact}
               color={awayInk}
               align="right"
             />

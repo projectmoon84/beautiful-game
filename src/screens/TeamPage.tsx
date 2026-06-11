@@ -7,6 +7,7 @@ import SquadList from '../components/SquadList';
 import SubTabs from '../components/SubTabs';
 import PitchTexture from '../textures/PitchTexture';
 import { pickTexture } from '../textures/pickTexture';
+import { randomTeamFact } from '../utils/facts';
 
 const TEAM_TABS = [
   { id: 'standings', label: 'Standings' },
@@ -40,9 +41,8 @@ export default function TeamPage() {
   const homeFixture = teamFixtures.find(f => f.homeTeamId === team.id) ?? teamFixtures[0];
   const venue = homeFixture ? dataService.venue(homeFixture.venueId) : undefined;
 
-  const allFacts = (team.triviaFacts ?? []).length > 0 ? team.triviaFacts! : [team.funFact];
   const displayFact = useMemo(
-    () => allFacts[Math.floor(Math.random() * allFacts.length)],
+    () => randomTeamFact(team),
     [team.id], // re-pick when team changes, stable within a visit
   );
 
