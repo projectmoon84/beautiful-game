@@ -98,7 +98,7 @@ export default function TeamPage() {
         {/* ── Header ── */}
         <div className="flex flex-col items-start gap-2 px-4 pb-10 pt-14">
           <div className="flex w-full flex-col items-start justify-center">
-            <div className="flex h-12 w-full items-end gap-2 overflow-hidden">
+            <div className="flex h-14 w-full items-end gap-2 overflow-hidden pt-1">
               <h1
                 className="flex min-w-0 flex-1 flex-col justify-end text-[64px] font-bold uppercase leading-[0.82]"
                 style={{
@@ -150,7 +150,7 @@ export default function TeamPage() {
         {/* ── Tab content ── */}
 
         {activeTab === 'standings' && (
-          <div className="px-4 pt-5 pb-8">
+          <div className="pt-5 pb-8">
             <GroupTable
               label={`Group ${team.groupId}`}
               rows={standings}

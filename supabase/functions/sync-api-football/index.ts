@@ -29,6 +29,13 @@ const SEASON     = 2026;
 const MAX_EVENTS = 20;   // hard cap on event-fetch requests per run
 const SOURCE     = 'api-football';
 
+interface SyncRequestBody {
+  fixtureId?: string;
+  maxEvents?: number;
+  skipSquads?: boolean;
+  reason?: string;
+}
+
 // API-Football position → our position
 const POSITION_MAP: Record<string, string> = {
   Goalkeeper:  'GK',  G:   'GK',
@@ -106,10 +113,16 @@ interface AFSquadResponse {
   }>;
 }
 
-Deno.serve(async () => {
+Deno.serve(async (request) => {
   const log: string[] = [];
   let reqCount = 0;
   const syncedAt = new Date().toISOString();
+  const body = (await request.json().catch(() => ({}))) as SyncRequestBody;
+  const maxEvents = Number.isFinite(body.maxEvents)
+    ? Math.max(0, Math.min(MAX_EVENTS, Number(body.maxEvents)))
+    : MAX_EVENTS;
+  const skipSquads = body.skipSquads === true;
+  const targetFixtureId = body.fixtureId;
 
   if (!API_KEY) {
     return new Response(
@@ -119,6 +132,10 @@ Deno.serve(async () => {
   }
 
   try {
+    if (body.reason) log.push(`Reason: ${body.reason}`);
+    if (targetFixtureId) log.push(`Target fixture: ${targetFixtureId}`);
+    if (skipSquads) log.push('Squad backfill disabled for this run');
+
     // ── 1. Fetch teams → build AF-ID → FIFA-code map ───────────────────
     log.push('Fetching teams from API-Football…');
     const teamsData = await apiFetch<AFTeamResponse>(`/teams?league=${LEAGUE_ID}&season=${SEASON}`);
@@ -247,12 +264,12 @@ Deno.serve(async () => {
     const needEvents = [
       ...liveDbFixtures,
       ...finishedNeedingEvents.filter((f: { id: string }) => !liveIds.has(f.id)),
-    ];
+    ].filter((f: { id: string }) => !targetFixtureId || f.id === targetFixtureId);
     log.push(`Event queue: ${liveDbFixtures.length} live + ${finishedNeedingEvents.length} finished-needing-events`);
 
     // ── 5. Fetch events for each, up to MAX_EVENTS requests ─────────────
     let eventsInserted = 0;
-    for (const fixture of needEvents.slice(0, MAX_EVENTS)) {
+    for (const fixture of needEvents.slice(0, maxEvents)) {
       const key   = `${fixture.home_team_id}_${fixture.away_team_id}`;
       const afId  = afFixtureIndex.get(key);
       if (!afId) { log.push(`WARN: no AF fixture ID for ${key}`); continue; }
@@ -317,7 +334,7 @@ Deno.serve(async () => {
       if (rows.length > 0) {
         const uniquePlayers = [...new Map(placeholderPlayers.map(player => [player.id, player])).values()];
         await supabaseAdmin.from('players').upsert(uniquePlayers, { onConflict: 'id', ignoreDuplicates: true });
-        const { error } = await supabaseAdmin.from('match_events').insert(rows);
+        const { error } = await supabaseAdmin.from('match_events').upsert(rows, { onConflict: 'id' });
         if (error) log.push(`WARN events ${fixture.id}: ${error.message}`);
         else eventsInserted += rows.length;
       }
@@ -325,7 +342,7 @@ Deno.serve(async () => {
     log.push(`Inserted ${eventsInserted} match events`);
 
     // ── 6. Squads — fetch teams with thin squads first ────────────────
-    const remainingBudget = MAX_EVENTS - needEvents.slice(0, MAX_EVENTS).length;
+    const remainingBudget = Math.max(0, maxEvents - needEvents.slice(0, maxEvents).length);
     const { data: existingPlayers } = await supabaseAdmin
       .from('players')
       .select('team_id');
@@ -337,7 +354,7 @@ Deno.serve(async () => {
       .map(item => ({ item, ourCode: afTeamToOurs.get(item.team.id) }))
       .filter(entry => entry.ourCode && (playerCountsByTeam.get(entry.ourCode) ?? 0) < 23);
 
-    if (thinTeams.length > 0 && remainingBudget > 0) {
+    if (!skipSquads && thinTeams.length > 0 && remainingBudget > 0) {
       log.push(`${thinTeams.length} teams have fewer than 23 players — fetching squads`);
       const { data: lockedPlayers } = await supabaseAdmin
         .from('players').select('id').eq('edited_by_admin', true);
@@ -373,7 +390,7 @@ Deno.serve(async () => {
       }
       log.push(`Upserted ${squadsFetched} players`);
     } else {
-      log.push(thinTeams.length === 0 ? 'Squads already populated, skipping' : 'No request budget left for squads');
+      log.push(skipSquads ? 'Squad backfill skipped by request' : thinTeams.length === 0 ? 'Squads already populated, skipping' : 'No request budget left for squads');
     }
 
     log.push(`Total API requests this run: ${reqCount}`);

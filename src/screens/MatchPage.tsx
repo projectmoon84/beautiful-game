@@ -45,6 +45,11 @@ export default function MatchPage() {
       </button>
 
       <section className="relative flex h-[631px] w-full overflow-hidden">
+        <div className="absolute inset-0 z-0 flex">
+          <div className="flex-1" style={{ background: home.primaryHex }} />
+          <div className="flex-1" style={{ background: away.primaryHex }} />
+        </div>
+
         <PitchMarkings
           events={isLive ? events : []}
           minute={fixture.minute ?? 0}
@@ -54,8 +59,8 @@ export default function MatchPage() {
         />
 
         <div
-          className="relative z-10 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
-          style={{ background: home.primaryHex, color: home.secondaryHex }}
+          className="relative z-20 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
+          style={{ color: home.secondaryHex }}
         >
           <div className="text-[12px] font-medium leading-none">
             {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
@@ -91,8 +96,8 @@ export default function MatchPage() {
         </div>
 
         <div
-          className="relative z-10 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
-          style={{ background: away.primaryHex, color: awayInk }}
+          className="relative z-20 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
+          style={{ color: awayInk }}
         >
           <div
             className="text-right text-[12px] font-medium leading-none"
@@ -179,12 +184,12 @@ function TeamHeader({
   const markerClass = scored
     ? 'min-w-8 text-center text-[54px] font-bold leading-[0.88]'
     : 'text-[30px] font-bold leading-none';
-  const codeClass = 'max-w-full truncate text-[54px] font-bold uppercase leading-[0.88]';
+  const codeClass = 'max-w-full truncate text-[48px] font-bold uppercase leading-[0.88] sm:text-[64px]';
 
   return (
     <div
       className={[
-        'flex items-center gap-4 pb-7 pt-[46px]',
+        'flex items-center gap-6 pb-7 pt-[46px]',
         align === 'home' ? 'justify-end' : 'justify-start',
       ].join(' ')}
       style={{ color }}
@@ -273,45 +278,52 @@ function PitchMarkings({
   ].sort((a, b) => b.minute - a.minute);
 
   return (
-    <div
-      className="pointer-events-none absolute left-1/2 top-[-342px] z-20 h-[896px] w-[896px] -translate-x-1/2"
-      aria-hidden="true"
-    >
-      {rings.map(ring => (
-        <div
-          key={ring.size}
-          className="absolute rounded-full"
-          style={{
-            width: ring.size,
-            height: ring.size,
-            left: (896 - ring.size) / 2,
-            top: (896 - ring.size) / 2,
-            border: `${ring.border}px solid rgba(255,255,255,${ring.opacity})`,
-          }}
-        />
-      ))}
-      <div className="absolute left-1/2 top-[342px] h-[638px] w-px bg-white" />
-      <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white" />
-
-      {timelineItems.map((item, index) => {
-        const top = eventTop(index);
-
-        if (item.type === 'half-time') {
-          return <HalfTimeEvent key="half-time" top={top} />;
-        }
-
-        const isHome = item.event.teamId === homeTeamId;
-        return (
-          <TimelineEvent
-            key={item.event.id}
-            event={item.event}
-            isHome={isHome}
-            color={isHome ? homeColor : awayColor}
-            top={top}
+    <>
+      <div
+        className="pointer-events-none absolute left-1/2 top-[-342px] z-10 h-[896px] w-[896px] -translate-x-1/2"
+        aria-hidden="true"
+      >
+        {rings.map(ring => (
+          <div
+            key={ring.size}
+            className="absolute rounded-full"
+            style={{
+              width: ring.size,
+              height: ring.size,
+              left: (896 - ring.size) / 2,
+              top: (896 - ring.size) / 2,
+              border: `${ring.border}px solid rgba(255,255,255,${ring.opacity})`,
+            }}
           />
-        );
-      })}
-    </div>
+        ))}
+        <div className="absolute left-1/2 top-[342px] h-[638px] w-px bg-white" />
+        <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white" />
+      </div>
+
+      <div
+        className="pointer-events-none absolute left-1/2 top-[-342px] z-30 h-[896px] w-[896px] -translate-x-1/2"
+        aria-hidden="true"
+      >
+        {timelineItems.map((item, index) => {
+          const top = eventTop(index);
+
+          if (item.type === 'half-time') {
+            return <HalfTimeEvent key="half-time" top={top} />;
+          }
+
+          const isHome = item.event.teamId === homeTeamId;
+          return (
+            <TimelineEvent
+              key={item.event.id}
+              event={item.event}
+              isHome={isHome}
+              color={isHome ? homeColor : awayColor}
+              top={top}
+            />
+          );
+        })}
+      </div>
+    </>
   );
 }
 

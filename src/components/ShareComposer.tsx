@@ -270,8 +270,15 @@ const ShareCard = forwardRef<HTMLDivElement, {
       ref={ref}
       className="relative h-[675px] w-[540px] overflow-hidden bg-white font-sans"
     >
-      <div className="absolute inset-0 flex">
-        <div className="flex flex-1 flex-col p-4" style={{ background: home.primaryHex, color: home.secondaryHex }}>
+      <div className="absolute inset-0 z-0 flex">
+        <div className="flex-1" style={{ background: home.primaryHex }} />
+        <div className="flex-1" style={{ background: away.primaryHex }} />
+      </div>
+
+      <SharePitch events={events} home={home} away={away} minute={fixture.minute ?? 90} />
+
+      <div className="absolute inset-0 z-20 flex">
+        <div className="flex flex-1 flex-col p-4" style={{ color: home.secondaryHex }}>
           <div className="text-[12px] font-medium leading-none">
             {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
           </div>
@@ -281,7 +288,7 @@ const ShareCard = forwardRef<HTMLDivElement, {
             score={fixture.homeScore ?? 0}
           />
         </div>
-        <div className="flex flex-1 flex-col p-4" style={{ background: away.primaryHex, color: awayInk }}>
+        <div className="flex flex-1 flex-col p-4" style={{ color: awayInk }}>
           <div className="text-right text-[12px] font-medium leading-none">Group {fixture.groupId}</div>
           <ShareScoreHeader
             align="away"
@@ -291,9 +298,7 @@ const ShareCard = forwardRef<HTMLDivElement, {
         </div>
       </div>
 
-      <SharePitch events={events} home={home} away={away} minute={fixture.minute ?? 90} />
-
-      <div className="absolute left-3 top-[357px] h-[307px] w-[520px]">
+      <div className="absolute left-3 top-[357px] z-40 h-[307px] w-[520px]">
         {stickers.map(sticker => (
           <motion.div
             key={sticker.id}
@@ -381,66 +386,70 @@ function SharePitch({
   ].sort((a, b) => b.minute - a.minute);
 
   return (
-    <div className="pointer-events-none absolute left-1/2 top-[-342px] h-[896px] w-[896px] -translate-x-1/2">
-      {[121.68, 232.3, 453.53, 674.77, 896].map((size, index) => (
-        <div
-          key={size}
-          className="absolute rounded-full"
-          style={{
-            width: size,
-            height: size,
-            left: (896 - size) / 2,
-            top: (896 - size) / 2,
-            border: `${index === 0 ? 1 : 55.31}px solid rgba(255,255,255,${index === 0 ? 1 : 0.1})`,
-          }}
-        />
-      ))}
-      <div className="absolute left-1/2 top-[342px] h-[678px] w-px bg-white" />
-      <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white" />
+    <>
+      <div className="pointer-events-none absolute left-1/2 top-[-342px] z-10 h-[896px] w-[896px] -translate-x-1/2">
+        {[121.68, 232.3, 453.53, 674.77, 896].map((size, index) => (
+          <div
+            key={size}
+            className="absolute rounded-full"
+            style={{
+              width: size,
+              height: size,
+              left: (896 - size) / 2,
+              top: (896 - size) / 2,
+              border: `${index === 0 ? 1 : 55.31}px solid rgba(255,255,255,${index === 0 ? 1 : 0.1})`,
+            }}
+          />
+        ))}
+        <div className="absolute left-1/2 top-[342px] h-[678px] w-px bg-white" />
+        <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white" />
+      </div>
 
-      {items.map((item, index) => {
-        const top = 342 + 170 + index * 42;
+      <div className="pointer-events-none absolute left-1/2 top-[-342px] z-30 h-[896px] w-[896px] -translate-x-1/2">
+        {items.map((item, index) => {
+          const top = 342 + 170 + index * 42;
 
-        if (item.type === 'half-time') {
+          if (item.type === 'half-time') {
+            return (
+              <div
+                key="half-time"
+                className="absolute left-1/2 -translate-x-1/2 text-[12px] font-semibold leading-none text-white"
+                style={{ top: top + 6 }}
+              >
+                HT
+              </div>
+            );
+          }
+
+          const isHome = item.event.teamId === home.id;
+          const player = dataService.player(item.event.playerId);
+          const assist = item.event.assistPlayerId ? dataService.player(item.event.assistPlayerId) : undefined;
+
           return (
             <div
-              key="half-time"
-              className="absolute left-1/2 -translate-x-1/2 text-[12px] font-semibold leading-none text-white"
-              style={{ top: top + 6 }}
+              key={item.event.id}
+              className="absolute left-1/2 h-10 w-[300px] -translate-x-1/2"
+              style={{ top }}
             >
-              HT
+              <div className="absolute left-1/2 top-1.5 z-10 -translate-x-1/2">
+                <ShareMinute minute={item.event.minute} />
+              </div>
+              {isHome ? (
+                <div className="absolute right-[172px] top-1.5 flex items-start justify-end gap-4">
+                  <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={home.secondaryHex} align="right" />
+                  <ShareEventIcon type={item.event.type} />
+                </div>
+              ) : (
+                <div className="absolute left-[172px] top-1.5 flex items-start justify-start gap-4">
+                  <ShareEventIcon type={item.event.type} />
+                  <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={away.secondaryHex} align="left" />
+                </div>
+              )}
             </div>
           );
-        }
-
-        const isHome = item.event.teamId === home.id;
-        const player = dataService.player(item.event.playerId);
-        const assist = item.event.assistPlayerId ? dataService.player(item.event.assistPlayerId) : undefined;
-
-        return (
-          <div
-            key={item.event.id}
-            className="absolute left-1/2 h-10 w-[300px] -translate-x-1/2"
-            style={{ top }}
-          >
-            <div className="absolute left-1/2 top-1.5 z-10 -translate-x-1/2">
-              <ShareMinute minute={item.event.minute} />
-            </div>
-            {isHome ? (
-              <div className="absolute right-[172px] top-1.5 flex items-start justify-end gap-4">
-                <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={home.secondaryHex} align="right" />
-                <ShareEventIcon type={item.event.type} />
-              </div>
-            ) : (
-              <div className="absolute left-[172px] top-1.5 flex items-start justify-start gap-4">
-                <ShareEventIcon type={item.event.type} />
-                <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={away.secondaryHex} align="left" />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+        })}
+      </div>
+    </>
   );
 }
 
