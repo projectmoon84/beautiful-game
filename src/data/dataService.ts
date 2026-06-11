@@ -37,6 +37,78 @@ let insightCache: InsightCard[] = [];
 let standingsCache = new Map<string, GroupTableRow[]>();
 let playerStatCache: PlayerStat[] = [];
 
+type FixtureRow = {
+  id: string;
+  home_team_id: string | null;
+  away_team_id: string | null;
+  venue_id: string;
+  group_id: string | null;
+  kickoff_utc: string;
+  stage: string;
+  status: string;
+  minute: number | null;
+  home_score: number | null;
+  away_score: number | null;
+  man_of_match_player_id: string | null;
+};
+
+type PlayerRow = {
+  id: string;
+  team_id: string;
+  name: string;
+  shirt_number: number;
+  position: string;
+};
+
+type MatchEventRow = {
+  id: string;
+  fixture_id: string;
+  minute: number;
+  type: string;
+  team_id: string;
+  player_id: string;
+  assist_player_id: string | null;
+};
+
+function mapFixtureRow(row: FixtureRow): Fixture {
+  return {
+    id:                  row.id,
+    homeTeamId:          row.home_team_id ?? '',
+    awayTeamId:          row.away_team_id ?? '',
+    venueId:             row.venue_id,
+    groupId:             row.group_id ?? '',
+    kickoffUtc:          row.kickoff_utc,
+    stage:               row.stage as Stage,
+    status:              row.status as FixtureStatus,
+    minute:              row.minute              ?? undefined,
+    homeScore:           row.home_score          ?? undefined,
+    awayScore:           row.away_score          ?? undefined,
+    manOfMatchPlayerId:  row.man_of_match_player_id ?? undefined,
+  };
+}
+
+function mapPlayerRow(row: PlayerRow): Player {
+  return {
+    id:          row.id,
+    teamId:      row.team_id,
+    name:        row.name,
+    shirtNumber: row.shirt_number,
+    position:    row.position as Position,
+  };
+}
+
+function mapEventRow(row: MatchEventRow): MatchEvent {
+  return {
+    id:              row.id,
+    fixtureId:       row.fixture_id,
+    minute:          row.minute,
+    type:            row.type as EventType,
+    teamId:          row.team_id,
+    playerId:        row.player_id,
+    assistPlayerId:  row.assist_player_id ?? undefined,
+  };
+}
+
 function loadMockData(): void {
   teamCache = new Map<string, Team>(DEV_MOCK_TEAMS.map(t => [t.id, t]));
   groupCache = new Map<string, Group>(DEV_MOCK_GROUPS.map(g => [g.id, g]));
@@ -167,13 +239,7 @@ async function loadFromSupabase(): Promise<void> {
     const visibleTeamIds = new Set(teamCache.keys());
     playerCache = new Map(playersData
       .filter(row => visibleTeamIds.has(row.team_id))
-      .map(row => [row.id, {
-      id:          row.id,
-      teamId:      row.team_id,
-      name:        row.name,
-      shirtNumber: row.shirt_number,
-      position:    row.position as Position,
-    }]));
+      .map(row => [row.id, mapPlayerRow(row)]));
   }
 
   if (playerStatsData) {
@@ -208,35 +274,14 @@ async function loadFromSupabase(): Promise<void> {
           : true) &&
         (!hasRealFeedFixtures || row.id.startsWith('OF-'))
       ))
-      .map(row => ({
-      id:                  row.id,
-      homeTeamId:          row.home_team_id ?? '',
-      awayTeamId:          row.away_team_id ?? '',
-      venueId:             row.venue_id,
-      groupId:             row.group_id ?? '',
-      kickoffUtc:          row.kickoff_utc,
-      stage:               row.stage as Stage,
-      status:              row.status as FixtureStatus,
-      minute:              row.minute              ?? undefined,
-      homeScore:           row.home_score          ?? undefined,
-      awayScore:           row.away_score          ?? undefined,
-      manOfMatchPlayerId:  row.man_of_match_player_id ?? undefined,
-    }));
+      .map(mapFixtureRow);
   }
 
   if (eventsData) {
     const visibleFixtureIds = new Set(fixtureCache.map(f => f.id));
     eventCache = eventsData
       .filter(row => visibleFixtureIds.has(row.fixture_id))
-      .map(row => ({
-      id:              row.id,
-      fixtureId:       row.fixture_id,
-      minute:          row.minute,
-      type:            row.type as EventType,
-      teamId:          row.team_id,
-      playerId:        row.player_id,
-      assistPlayerId:  row.assist_player_id ?? undefined,
-    }));
+      .map(mapEventRow);
   }
 
   if (insightsData) {
@@ -333,6 +378,53 @@ export const dataService = {
     return eventCache
       .filter(e => e.fixtureId === fixtureId)
       .sort((a, b) => a.minute - b.minute);
+  },
+
+  async refreshMatch(fixtureId: string): Promise<boolean> {
+    if (!supabase || !isSupabaseConfigured) return false;
+
+    const [{ data: fixtureData, error: fixtureError }, { data: eventsData, error: eventsError }] = await Promise.all([
+      supabase.from('fixtures').select('*').eq('id', fixtureId).maybeSingle(),
+      supabase.from('match_events').select('*').eq('fixture_id', fixtureId).order('minute'),
+    ]);
+
+    if (fixtureError || eventsError || !fixtureData) {
+      console.warn('[dataService] Match refresh failed', fixtureError ?? eventsError);
+      return false;
+    }
+
+    const refreshedFixture = mapFixtureRow(fixtureData);
+    fixtureCache = fixtureCache.map(fixture => fixture.id === fixtureId ? refreshedFixture : fixture);
+
+    const refreshedEvents = (eventsData ?? []).map(mapEventRow);
+    eventCache = [
+      ...eventCache.filter(event => event.fixtureId !== fixtureId),
+      ...refreshedEvents,
+    ];
+
+    const playerIds = [
+      ...new Set(refreshedEvents.flatMap(event => [
+        event.playerId,
+        event.assistPlayerId,
+      ]).filter((id): id is string => Boolean(id))),
+    ];
+
+    if (playerIds.length > 0) {
+      const { data: playersData, error: playersError } = await supabase
+        .from('players')
+        .select('id, team_id, name, shirt_number, position')
+        .in('id', playerIds);
+
+      if (playersError) {
+        console.warn('[dataService] Match player refresh failed', playersError);
+      } else {
+        for (const player of playersData ?? []) {
+          playerCache.set(player.id, mapPlayerRow(player));
+        }
+      }
+    }
+
+    return true;
   },
 
   // ── Derived: standings (mirrors the SQL standings view) ───────
