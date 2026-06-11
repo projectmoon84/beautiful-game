@@ -224,6 +224,51 @@ function dataCountsFromPayload(payload: Record<string, unknown>): Record<string,
   return extracted;
 }
 
+function numberFromCounts(counts: Record<string, unknown>, key: string): number {
+  const value = counts[key];
+  return typeof value === 'number' ? value : 0;
+}
+
+async function applyClockFallback(job: SyncJob, payload: Record<string, unknown>, log: string[]) {
+  if (job.provider !== 'api-football' || !job.fixture_id) return;
+
+  const counts = dataCountsFromPayload(payload);
+  if (numberFromCounts(counts, 'fixtureUpdates') > 0) return;
+
+  const { data: fixture, error } = await supabaseAdmin
+    .from('fixtures')
+    .select('id, kickoff_utc, status, home_score, away_score, edited_by_admin')
+    .eq('id', job.fixture_id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!fixture || fixture.edited_by_admin || fixture.status === 'finished') return;
+
+  const kickoffMs = new Date(fixture.kickoff_utc).getTime();
+  const elapsedMinutes = Math.floor((Date.now() - kickoffMs) / 60_000);
+  if (elapsedMinutes < 0 || elapsedMinutes > 135) return;
+
+  const { error: updateError } = await supabaseAdmin
+    .from('fixtures')
+    .update({
+      status: 'live',
+      minute: Math.max(1, elapsedMinutes),
+      home_score: fixture.home_score ?? 0,
+      away_score: fixture.away_score ?? 0,
+      source: 'clock-fallback',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', fixture.id)
+    .eq('edited_by_admin', false);
+  if (updateError) throw updateError;
+
+  payload.counts = {
+    ...counts,
+    clockFallbackFixtureUpdates: 1,
+    clockFallbackMinute: Math.max(1, elapsedMinutes),
+  };
+  log.push(`Clock fallback marked ${fixture.id} live at ${Math.max(1, elapsedMinutes)}'`);
+}
+
 async function createRunLog(job: SyncJob, requestBody: Record<string, unknown>): Promise<string> {
   const { data, error } = await supabaseAdmin
     .from('sync_run_logs')
@@ -378,6 +423,7 @@ async function runDueJobs(now: Date, log: string[]) {
         const result = job.provider === 'openfootball'
           ? await invokeFunction('sync-openfootball', requestBody)
           : await invokeFunction('sync-api-football', requestBody);
+        await applyClockFallback(job, result.payload, log);
 
         await finishRunLog(runLogId, {
           success: true,
