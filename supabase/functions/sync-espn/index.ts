@@ -12,6 +12,7 @@ import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world';
 const SOURCE = 'espn';
 const MAX_EVENT_FETCHES = 4;
+const MAX_EVENT_FETCHES_BACKFILL = 64;
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/London',
   year: 'numeric',
@@ -24,6 +25,7 @@ type SyncRequestBody = {
   maxEvents?: number;
   reason?: string;
   dates?: string;
+  backfill?: boolean;
 };
 
 type DbFixture = {
@@ -105,6 +107,7 @@ type EspnAthlete = {
 type EspnSummary = {
   details?: EspnDetail[];
   plays?: EspnDetail[];
+  keyEvents?: EspnDetail[];
   competitions?: Array<{ details?: EspnDetail[] }>;
   boxscore?: unknown;
 };
@@ -247,9 +250,10 @@ Deno.serve(async (request) => {
   const body = (await request.json().catch(() => ({}))) as SyncRequestBody;
   const log: string[] = [];
   const syncedAt = new Date().toISOString();
+  const defaultMax = body.backfill ? MAX_EVENT_FETCHES_BACKFILL : MAX_EVENT_FETCHES;
   const maxEvents = Number.isFinite(body.maxEvents)
-    ? Math.max(0, Math.min(MAX_EVENT_FETCHES, Number(body.maxEvents)))
-    : MAX_EVENT_FETCHES;
+    ? Math.max(0, Math.min(MAX_EVENT_FETCHES_BACKFILL, Number(body.maxEvents)))
+    : defaultMax;
   const targetFixtureId = body.fixtureId;
   let apiRequests = 0;
   let fixtureUpdates = 0;
@@ -273,14 +277,33 @@ Deno.serve(async (request) => {
     const targetFixture = targetFixtureId
       ? fixtureRows.find(fixture => fixture.id === targetFixtureId)
       : null;
-    const date = body.dates
-      ?? (targetFixture?.kickoff_utc ? ukDateFromIso(targetFixture.kickoff_utc).replaceAll('-', '') : ukDateFromIso(syncedAt).replaceAll('-', ''));
+    // In backfill mode, collect all distinct dates that have finished or live fixtures.
+    // Otherwise use the explicitly supplied date, the target fixture's date, or today.
+    let datesToFetch: string[];
+    if (body.backfill) {
+      const uniqueDates = new Set<string>();
+      for (const fixture of fixtureRows) {
+        if (fixture.status === 'finished' || fixture.status === 'live') {
+          uniqueDates.add(ukDateFromIso(fixture.kickoff_utc).replaceAll('-', ''));
+        }
+      }
+      datesToFetch = [...uniqueDates].sort();
+      log.push(`Backfill mode: ${datesToFetch.length} date(s) to process: ${datesToFetch.join(', ')}`);
+    } else {
+      const date = body.dates
+        ?? (targetFixture?.kickoff_utc ? ukDateFromIso(targetFixture.kickoff_utc).replaceAll('-', '') : ukDateFromIso(syncedAt).replaceAll('-', ''));
+      datesToFetch = [date];
+    }
 
-    const scoreboardUrl = `${ESPN_BASE}/scoreboard?dates=${date}&limit=100`;
-    const scoreboard = await fetchJson<EspnScoreboard>(scoreboardUrl);
-    apiRequests++;
-    const events = scoreboard.events ?? [];
-    log.push(`ESPN req ${apiRequests}: scoreboard ${date} -> ${events.length} events`);
+    const events: EspnEvent[] = [];
+    for (const date of datesToFetch) {
+      const scoreboardUrl = `${ESPN_BASE}/scoreboard?dates=${date}&limit=100`;
+      const scoreboard = await fetchJson<EspnScoreboard>(scoreboardUrl);
+      apiRequests++;
+      const dateEvents = scoreboard.events ?? [];
+      log.push(`ESPN req ${apiRequests}: scoreboard ${date} -> ${dateEvents.length} events`);
+      events.push(...dateEvents);
+    }
 
     const dbByCodePair = new Map<string, DbFixture>();
     for (const fixture of fixtureRows) {
@@ -348,6 +371,20 @@ Deno.serve(async (request) => {
       log.push('No matching ESPN fixtures to update');
     }
 
+    // When maxEvents=0 the caller only wants score/status updates — leave existing events intact.
+    if (maxEvents === 0) {
+      log.push('maxEvents=0: skipping event processing, existing events preserved');
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          reqCount: apiRequests,
+          counts: { apiRequests, scoreboardEvents: events.length, fixtureUpdates, eventFetches: 0, eventsInserted: 0, possibleEvents: 0, mappableEvents: 0 },
+          log,
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
     const eventQueue = [...espnByFixtureId.entries()]
       .filter(([fixtureId, entry]) => {
         const status = updates.find(update => update.id === fixtureId)?.status;
@@ -368,12 +405,17 @@ Deno.serve(async (request) => {
         log.push(`ESPN req ${apiRequests}: summary ${event.id}`);
       }
 
-      const details = [
-        ...(summary?.details ?? []),
-        ...(summary?.plays ?? []),
-        ...(summary?.competitions?.[0]?.details ?? []),
-        ...(event.competitions?.[0]?.details ?? []),
-      ];
+      // keyEvents is the richest source — it includes participants[1] for assists.
+      // Prefer it; fall back to details/plays from older paths if empty.
+      const keyEvents = summary?.keyEvents ?? [];
+      const details = keyEvents.length > 0
+        ? keyEvents
+        : [
+            ...(summary?.details ?? []),
+            ...(summary?.plays ?? []),
+            ...(summary?.competitions?.[0]?.details ?? []),
+            ...(event.competitions?.[0]?.details ?? []),
+          ];
       possibleEvents += details.length;
       log.push(`ESPN details ${event.id} -> ${details.length} details`);
 
@@ -402,6 +444,28 @@ Deno.serve(async (request) => {
           source: SOURCE,
           updated_at: syncedAt,
         });
+
+        // Assist: keyEvents puts the assist provider as participants[1]; older paths use athletesInvolved[1].
+        const isGoalEvent = type === 'goal' || type === 'penalty';
+        const assistAthlete = isGoalEvent
+          ? (detail.participants?.[1]?.athlete ?? detail.athletesInvolved?.[1] ?? null)
+          : null;
+        const assistName = playerName(assistAthlete);
+        let assistPlayerId: string | null = null;
+        if (assistAthlete?.id && assistName) {
+          assistPlayerId = `${teamCode}-ESPN-${assistAthlete.id}`;
+          playerRows.push({
+            id: assistPlayerId,
+            team_id: teamCode,
+            name: assistName,
+            shirt_number: playerShirtNumber(assistAthlete),
+            position: playerPosition(assistAthlete?.position),
+            source: SOURCE,
+            updated_at: syncedAt,
+          });
+          log.push(`  assist: ${assistName}`);
+        }
+
         eventRows.push({
           id: eventId(fixtureId, detail, type, teamCode, athleteId, index),
           fixture_id: fixtureId,
@@ -409,7 +473,7 @@ Deno.serve(async (request) => {
           type,
           team_id: teamCode,
           player_id: playerId,
-          assist_player_id: null,
+          assist_player_id: assistPlayerId,
           source: SOURCE,
           updated_at: syncedAt,
         });

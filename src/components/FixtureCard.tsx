@@ -41,7 +41,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
       <div className="flex h-full">
 
         <div
-          className="flex flex-1 flex-col justify-center gap-2 overflow-hidden p-4"
+          className="flex flex-1 flex-col justify-between overflow-hidden p-4"
           style={{ background: homeBg }}
         >
           <div
@@ -51,16 +51,16 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
             {formatDate(f.kickoffUtc)} · {formatTime(f.kickoffUtc)}
           </div>
 
-          <div className="flex flex-1 items-end gap-2">
+          <div className="flex items-end justify-between gap-2">
             <span
-              className="flex flex-1 flex-col justify-end truncate text-[40px] font-bold uppercase leading-[0.9]"
+              className="min-w-0 truncate text-[40px] font-bold uppercase leading-[0.9]"
               style={{ color: homeInk }}
             >
               {h.shortCode}
             </span>
             {showScore && (
               <span
-                className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
+                className="shrink-0 text-[40px] font-bold leading-[0.9]"
                 style={{ color: homeInk }}
               >
                 {homeScore}
@@ -70,7 +70,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
         </div>
 
         <div
-          className="flex flex-1 flex-col justify-center gap-2 overflow-hidden p-4"
+          className="flex flex-1 flex-col justify-between overflow-hidden p-4"
           style={{ background: awayBg }}
         >
           <div
@@ -80,17 +80,17 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
             {isFinished ? `FT · Group ${f.groupId}` : `Group ${f.groupId}`}
           </div>
 
-          <div className="flex flex-1 items-end gap-2">
+          <div className="flex items-end justify-between gap-2">
             {showScore && (
               <span
-                className="flex flex-col justify-end text-[40px] font-bold leading-[0.9]"
+                className="shrink-0 text-[40px] font-bold leading-[0.9]"
                 style={{ color: awayInk }}
               >
                 {awayScore}
               </span>
             )}
             <span
-              className="flex flex-1 flex-col justify-end truncate text-right text-[40px] font-bold uppercase leading-[0.9]"
+              className="min-w-0 flex-1 truncate text-right text-[40px] font-bold uppercase leading-[0.9]"
               style={{ color: awayInk }}
             >
               {a.shortCode}

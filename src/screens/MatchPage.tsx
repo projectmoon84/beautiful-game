@@ -18,26 +18,28 @@ export default function MatchPage() {
   const fixture = isLiveDemo ? LIVE_DEMO_FIXTURE : id ? dataService.fixture(id) : undefined;
   const home = fixture ? dataService.team(fixture.homeTeamId) : undefined;
   const away = fixture ? dataService.team(fixture.awayTeamId) : undefined;
-  const shouldRefreshLiveMatch = Boolean(fixture && !isLiveDemo && fixture.status === 'live');
 
   useEffect(() => {
-    if (!fixture || !shouldRefreshLiveMatch) return;
+    if (!fixture || isLiveDemo) return;
+    const status = fixture.status;
+    if (status !== 'live' && status !== 'finished') return;
 
     let cancelled = false;
     async function refresh() {
       const changed = await dataService.refreshMatch(fixture!.id);
-      if (!cancelled && changed) {
-        setLiveRefreshTick(tick => tick + 1);
-      }
+      if (!cancelled && changed) setLiveRefreshTick(tick => tick + 1);
     }
 
     refresh();
+
+    if (status !== 'live') return () => { cancelled = true; };
+
     const interval = window.setInterval(refresh, 10_000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [fixture?.id, shouldRefreshLiveMatch]);
+  }, [fixture?.id, fixture?.status, isLiveDemo]);
 
   const homeFact = useMemo(
     () => home ? randomTeamFact(home) : '',
@@ -65,7 +67,7 @@ export default function MatchPage() {
   const awayInk = away.secondaryHex;
 
   return (
-    <div className={['min-h-full bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>
+    <div className={['min-h-full overflow-x-hidden bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>
       <button
         type="button"
         onClick={() => navigate(-1)}
@@ -75,96 +77,39 @@ export default function MatchPage() {
         ‹
       </button>
 
-      <section className="relative flex h-[631px] w-full overflow-hidden">
+      {/* Score header — pitch visuals + team codes + scores */}
+      <section className="relative w-full">
         <div className="absolute inset-0 z-0 flex">
           <div className="flex-1" style={{ background: home.primaryHex }} />
           <div className="flex-1" style={{ background: away.primaryHex }} />
         </div>
 
-        <PitchMarkings
-          events={isLive ? events : []}
-          minute={fixture.minute ?? 0}
-          homeTeamId={home.id}
-          homeColor={home.secondaryHex}
-          awayColor={awayInk}
-        />
+        <PitchMarkings />
 
-        <div
-          className="relative z-20 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
-          style={{ color: home.secondaryHex }}
-        >
-          <div className="text-[12px] font-medium leading-none">
-            {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
-          </div>
-
-          <TeamHeader
-            align="home"
-            code={home.shortCode}
-            marker={isScored ? String(fixture.homeScore ?? 0) : home.flagEmoji}
-            color={home.secondaryHex}
-            scored={isScored}
-          />
-
-          <div className={['flex flex-1 flex-col gap-0.5', isUpcoming ? 'pt-6' : 'justify-end'].join(' ')}>
-            {isUpcoming && venue && (
-              <InfoRow
-                label="Venue"
-                value={`${venue.stadium}, ${venue.city}`}
-                color={home.secondaryHex}
-              />
-            )}
-            <InfoRow
-              label="Title odds"
-              value={home.titleOdds}
+        <div className="relative z-20 flex">
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4" style={{ color: home.secondaryHex }}>
+            <div className="text-[12px] font-medium leading-none">
+              {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
+            </div>
+            <TeamHeader
+              align="home"
+              code={home.shortCode}
+              marker={isScored ? String(fixture.homeScore ?? 0) : home.flagEmoji}
               color={home.secondaryHex}
-            />
-            <InfoRow
-              label="That's a fact"
-              value={homeFact}
-              color={home.secondaryHex}
+              scored={isScored}
             />
           </div>
-        </div>
 
-        <div
-          className="relative z-20 flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4"
-          style={{ color: awayInk }}
-        >
-          <div
-            className="text-right text-[12px] font-medium leading-none"
-            style={{ color: awayInk }}
-          >
-            Group {fixture.groupId}
-          </div>
-
-          <TeamHeader
-            align="away"
-            code={away.shortCode}
-            marker={isScored ? String(fixture.awayScore ?? 0) : away.flagEmoji}
-            color={awayInk}
-            scored={isScored}
-          />
-
-          <div className={['flex flex-1 flex-col gap-0.5', isUpcoming ? 'pt-6' : 'justify-end'].join(' ')}>
-            {isUpcoming && (
-              <InfoRow
-                label="Last time"
-                value={`${home.shortCode} 1 - 1 ${away.shortCode}`}
-                color={awayInk}
-                align="right"
-              />
-            )}
-            <InfoRow
-              label="Title odds"
-              value={away.titleOdds}
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4" style={{ color: awayInk }}>
+            <div className="text-right text-[12px] font-medium leading-none" style={{ color: awayInk }}>
+              Group {fixture.groupId}
+            </div>
+            <TeamHeader
+              align="away"
+              code={away.shortCode}
+              marker={isScored ? String(fixture.awayScore ?? 0) : away.flagEmoji}
               color={awayInk}
-              align="right"
-            />
-            <InfoRow
-              label="That's a fact"
-              value={awayFact}
-              color={awayInk}
-              align="right"
+              scored={isScored}
             />
           </div>
         </div>
@@ -178,6 +123,41 @@ export default function MatchPage() {
           </div>
         )}
       </section>
+
+      {/* Events + info rows — grows with content, pushes page down */}
+      <div className="relative w-full">
+        <div className="absolute inset-0 z-0 flex">
+          <div className="flex-1" style={{ background: home.primaryHex }} />
+          <div className="flex-1" style={{ background: away.primaryHex }} />
+        </div>
+        <div className="absolute inset-y-0 left-1/2 z-10 w-px -translate-x-px bg-white/20" />
+
+        {isScored && events.length > 0 && (
+          <EventTimeline
+            events={events}
+            homeTeamId={home.id}
+            homeColor={home.secondaryHex}
+            awayColor={awayInk}
+          />
+        )}
+
+        <div className="relative z-20 flex">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
+            {isUpcoming && venue && (
+              <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
+            )}
+            <InfoRow label="Title odds" value={home.titleOdds} color={home.secondaryHex} />
+            <InfoRow label="That's a fact" value={homeFact} color={home.secondaryHex} />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: awayInk }}>
+            {isUpcoming && (
+              <InfoRow label="Last time" value={`${home.shortCode} 1 - 1 ${away.shortCode}`} color={awayInk} align="right" />
+            )}
+            <InfoRow label="Title odds" value={away.titleOdds} color={awayInk} align="right" />
+            <InfoRow label="That's a fact" value={awayFact} color={awayInk} align="right" />
+          </div>
+        </div>
+      </div>
 
       <GroupTable
         label={`Group ${fixture.groupId}`}
@@ -215,7 +195,7 @@ function TeamHeader({
   const markerClass = scored
     ? 'min-w-8 text-center text-[54px] font-bold leading-[0.88]'
     : 'text-[30px] font-bold leading-none';
-  const codeClass = 'max-w-full truncate text-[48px] font-bold uppercase leading-[0.88] sm:text-[64px]';
+  const codeClass = 'max-w-full truncate text-[44px] font-bold uppercase leading-[0.88] sm:text-[64px]';
 
   return (
     <div
@@ -279,19 +259,7 @@ function InfoRow({
   );
 }
 
-function PitchMarkings({
-  events,
-  minute,
-  homeTeamId,
-  homeColor,
-  awayColor,
-}: {
-  events: MatchEvent[];
-  minute: number;
-  homeTeamId: string;
-  homeColor: string;
-  awayColor: string;
-}) {
+function PitchMarkings() {
   const rings = [
     { size: 121.68, border: 1, opacity: 1 },
     { size: 232.3, border: 55.31, opacity: 0.1 },
@@ -299,130 +267,101 @@ function PitchMarkings({
     { size: 674.77, border: 55.31, opacity: 0.1 },
     { size: 896, border: 55.31, opacity: 0.1 },
   ];
-  const timelineItems = [
-    ...events.map(event => ({
-      type: 'event' as const,
-      minute: event.minute,
-      event,
-    })),
-    ...(minute >= 45 ? [{ type: 'half-time' as const, minute: 45 }] : []),
-  ].sort((a, b) => b.minute - a.minute);
-
-  return (
-    <>
-      <div
-        className="pointer-events-none absolute left-1/2 top-[-342px] z-10 h-[896px] w-[896px] -translate-x-1/2"
-        aria-hidden="true"
-      >
-        {rings.map(ring => (
-          <div
-            key={ring.size}
-            className="absolute rounded-full"
-            style={{
-              width: ring.size,
-              height: ring.size,
-              left: (896 - ring.size) / 2,
-              top: (896 - ring.size) / 2,
-              border: `${ring.border}px solid rgba(255,255,255,${ring.opacity})`,
-            }}
-          />
-        ))}
-        <div className="absolute left-1/2 top-[342px] h-[638px] w-px bg-white" />
-        <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white" />
-      </div>
-
-      <div
-        className="pointer-events-none absolute left-1/2 top-[-342px] z-30 h-[896px] w-[896px] -translate-x-1/2"
-        aria-hidden="true"
-      >
-        {timelineItems.map((item, index) => {
-          const top = eventTop(index);
-
-          if (item.type === 'half-time') {
-            return <HalfTimeEvent key="half-time" top={top} />;
-          }
-
-          const isHome = item.event.teamId === homeTeamId;
-          return (
-            <TimelineEvent
-              key={item.event.id}
-              event={item.event}
-              isHome={isHome}
-              color={isHome ? homeColor : awayColor}
-              top={top}
-            />
-          );
-        })}
-      </div>
-    </>
-  );
-}
-
-function HalfTimeEvent({ top }: { top: number }) {
   return (
     <div
-      className="absolute left-1/2 h-10 w-[300px] -translate-x-1/2"
-      style={{ top }}
+      className="pointer-events-none absolute left-1/2 top-[-342px] z-10 h-[896px] w-[896px] -translate-x-1/2"
+      aria-hidden="true"
     >
-      <div className="absolute left-1/2 top-1.5 z-30 -translate-x-1/2 text-center text-[12px] font-semibold leading-none text-white">
-        HT
-      </div>
+      {rings.map(ring => (
+        <div
+          key={ring.size}
+          className="absolute rounded-full"
+          style={{
+            width: ring.size,
+            height: ring.size,
+            left: (896 - ring.size) / 2,
+            top: (896 - ring.size) / 2,
+            border: `${ring.border}px solid rgba(255,255,255,${ring.opacity})`,
+          }}
+        />
+      ))}
+      <div className="absolute left-1/2 top-[342px] h-[638px] w-px bg-white" />
+      <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white" />
     </div>
   );
 }
+
+function EventTimeline({
+  events,
+  homeTeamId,
+  homeColor,
+  awayColor,
+}: {
+  events: MatchEvent[];
+  homeTeamId: string;
+  homeColor: string;
+  awayColor: string;
+}) {
+  const timelineItems = [...events]
+    .filter(e => e.type === 'goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red')
+    .sort((a, b) => b.minute - a.minute);
+
+  return (
+    <div className="relative z-20 w-full py-2">
+      {timelineItems.map((event) => {
+        const isHome = event.teamId === homeTeamId;
+        return (
+          <TimelineEvent
+            key={event.id}
+            event={event}
+            isHome={isHome}
+            color={isHome ? homeColor : awayColor}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 
 function TimelineEvent({
   event,
   isHome,
   color,
-  top,
 }: {
   event: MatchEvent;
   isHome: boolean;
   color: string;
-  top: number;
 }) {
   const player = dataService.player(event.playerId);
   const assist = event.assistPlayerId ? dataService.player(event.assistPlayerId) : undefined;
 
   return (
-    <div
-      className="absolute left-1/2 h-11 w-[300px] -translate-x-1/2"
-      style={{ top }}
-    >
-      <div className="absolute left-1/2 top-1.5 z-30 -translate-x-1/2">
+    <div className="relative h-10 w-full">
+      {/* Minute pill pinned at the centre line */}
+      <div className="absolute left-1/2 top-1.5 -translate-x-1/2">
         <MinutePill minute={event.minute} />
       </div>
+
       {isHome ? (
-        <div className="absolute right-[172px] top-1.5 flex items-start justify-end gap-4">
-          <EventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={color} align="right" />
+        /* Home: icon + text fills left half, text right-aligns toward centre */
+        <div className="absolute left-4 right-[calc(50%+22px)] top-1 flex items-start justify-end gap-2">
+          <div style={{ color }}>
+            <div className="text-[13px] font-semibold leading-[15px] text-right">{player?.name ?? 'Unknown'}</div>
+            {assist && <div className="text-[11px] font-normal leading-[13px] text-right opacity-80">{assist.name}</div>}
+          </div>
           <EventIcon type={event.type} />
         </div>
       ) : (
-        <div className="absolute left-[172px] top-1.5 flex items-start justify-start gap-4">
+        /* Away: text fills right half, left-aligns from centre */
+        <div className="absolute left-[calc(50%+22px)] right-4 top-1 flex items-start gap-2">
           <EventIcon type={event.type} />
-          <EventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={color} align="left" />
+          <div style={{ color }}>
+            <div className="text-[13px] font-semibold leading-[15px]">{player?.name ?? 'Unknown'}</div>
+            {assist && <div className="text-[11px] font-normal leading-[13px] opacity-80">{assist.name}</div>}
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function EventNames({
-  player,
-  assist,
-  color,
-  align,
-}: {
-  player: string;
-  assist?: string;
-  color: string;
-  align: 'left' | 'right';
-}) {
-  return (
-    <div className={align === 'right' ? 'text-right' : 'text-left'} style={{ color }}>
-      <div className="text-[14px] font-semibold leading-[14px]">{player}</div>
-      {assist && <div className="mt-0.5 text-[14px] font-normal leading-[14px]">{assist}</div>}
     </div>
   );
 }
@@ -449,10 +388,6 @@ function MinutePill({ minute }: { minute: number }) {
       {minute}'
     </span>
   );
-}
-
-function eventTop(index: number): number {
-  return 342 + 178 + index * 40;
 }
 
 function ShareResultBar({ onClick }: { onClick: () => void }) {

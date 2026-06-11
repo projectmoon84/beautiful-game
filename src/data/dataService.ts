@@ -395,6 +395,7 @@ export const dataService = {
 
     const refreshedFixture = mapFixtureRow(fixtureData);
     fixtureCache = fixtureCache.map(fixture => fixture.id === fixtureId ? refreshedFixture : fixture);
+    if (refreshedFixture.groupId) standingsCache.delete(refreshedFixture.groupId);
 
     const refreshedEvents = (eventsData ?? []).map(mapEventRow);
     eventCache = [
@@ -444,7 +445,7 @@ export const dataService = {
     }
 
     for (const f of fixtureCache) {
-      if (f.groupId !== groupId || f.status !== 'finished') continue;
+      if (f.groupId !== groupId || (f.status !== 'finished' && f.status !== 'live')) continue;
       const hs = f.homeScore ?? 0;
       const as_ = f.awayScore ?? 0;
 
