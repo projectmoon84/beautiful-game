@@ -136,30 +136,6 @@ async function planTodayIfNeeded(now: Date, log: string[]) {
     .filter(fixture => fixtureUkDate(fixture.kickoff_utc) === ukDate);
 
   const jobs: PlannedJob[] = todayFixtures.flatMap(fixture => plannedFixtureJobs(fixture, ukDate));
-  const latestKickoff = todayFixtures.at(-1)?.kickoff_utc;
-  if (latestKickoff) {
-    jobs.push({
-      dedupe_key: `${ukDate}:day_settle`,
-      fixture_id: null,
-      uk_date: ukDate,
-      run_at: addMinutes(latestKickoff, 145),
-      kind: `day_settle_${ukDate}`,
-      provider: 'openfootball',
-      priority: 40,
-      status: 'pending',
-    });
-  }
-
-  jobs.push({
-    dedupe_key: `${ukDate}:daily_baseline`,
-    fixture_id: null,
-    uk_date: ukDate,
-    run_at: now.toISOString(),
-    kind: `daily_baseline_${ukDate}`,
-    provider: 'openfootball',
-    priority: 1,
-    status: 'pending',
-  });
 
   const { error: dayError } = await supabaseAdmin
     .from('sync_schedule_days')

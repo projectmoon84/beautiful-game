@@ -21,7 +21,7 @@ const canUseMockData = !import.meta.env.PROD || import.meta.env.VITE_ALLOW_MOCK_
 const mockAllowedInThisBuild =
   canUseMockData &&
   (requestedDataSource === 'mock' || requestedDataSource === 'auto');
-const SUPABASE_LOAD_TIMEOUT_MS = 8_000;
+const SUPABASE_LOAD_TIMEOUT_MS = 15_000;
 
 // ── Module-level caches ───────────────────────────────────────────
 // Production starts empty and fills only from Supabase. Local dev can opt into

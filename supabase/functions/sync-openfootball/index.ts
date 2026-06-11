@@ -234,10 +234,19 @@ Deno.serve(async () => {
       .from('players')
       .select('id')
       .eq('edited_by_admin', true);
+    // Load current fixture states so we never downgrade a live/finished match back to scheduled.
+    const { data: activeFixtures } = await supabaseAdmin
+      .from('fixtures')
+      .select('id, status, home_score, away_score')
+      .in('status', ['live', 'finished']);
 
     const lockedTeamIds = new Set((lockedTeams ?? []).map((row: { id: string }) => row.id));
     const lockedFixtureIds = new Set((lockedFixtures ?? []).map((row: { id: string }) => row.id));
     const lockedPlayerIds = new Set((lockedPlayers ?? []).map((row: { id: string }) => row.id));
+    type ActiveFixture = { id: string; status: string; home_score: number | null; away_score: number | null };
+    const activeFixtureMap = new Map<string, ActiveFixture>(
+      (activeFixtures ?? []).map((row: ActiveFixture) => [row.id, row]),
+    );
 
     const groups = [...new Set(teamsJson.map(team => team.group))]
       .sort()
@@ -362,6 +371,12 @@ Deno.serve(async () => {
       const id = fixtureId(match, homeId ?? match.team1, awayId ?? match.team2);
       if (lockedFixtureIds.has(id)) continue;
 
+      // Never downgrade a live/finished fixture — preserve ESPN-sourced status and scores.
+      const active = activeFixtureMap.get(id);
+      const result = active
+        ? { status: active.status, home_score: active.home_score, away_score: active.away_score }
+        : resultFor(match);
+
       fixtureRows.push({
         id,
         home_team_id: homeId ?? null,  // null until group stage determines the team
@@ -374,7 +389,7 @@ Deno.serve(async () => {
         man_of_match_player_id: null,
         source: SOURCE,
         updated_at: syncedAt,
-        ...resultFor(match),
+        ...result,
       });
     }
 
