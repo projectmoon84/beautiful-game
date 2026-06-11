@@ -39,6 +39,7 @@ type EspnCompetitor = {
   homeAway: 'home' | 'away';
   score?: string;
   team?: {
+    id?: string;
     abbreviation?: string;
     displayName?: string;
     shortDisplayName?: string;
@@ -78,10 +79,10 @@ type EspnScoreboard = {
 
 type EspnDetail = {
   clock?: { displayValue?: string; value?: number };
-  team?: { abbreviation?: string; displayName?: string };
-  athletesInvolved?: Array<{ id?: string; displayName?: string; shortName?: string }>;
-  athletes?: Array<{ id?: string; displayName?: string; shortName?: string }>;
-  participants?: Array<{ athlete?: { id?: string; displayName?: string; shortName?: string } }>;
+  team?: { id?: string; abbreviation?: string; displayName?: string };
+  athletesInvolved?: EspnAthlete[];
+  athletes?: EspnAthlete[];
+  participants?: Array<{ athlete?: EspnAthlete }>;
   type?: { id?: string; text?: string; abbreviation?: string };
   scoringPlay?: boolean;
   yellowCard?: boolean;
@@ -90,6 +91,15 @@ type EspnDetail = {
   penaltyKick?: boolean;
   text?: string;
   displayTime?: string;
+};
+
+type EspnAthlete = {
+  id?: string;
+  displayName?: string;
+  shortName?: string;
+  fullName?: string;
+  jersey?: string;
+  position?: string;
 };
 
 type EspnSummary = {
@@ -188,6 +198,29 @@ function detailAthlete(detail: EspnDetail): { id?: string; name?: string } | nul
   };
 }
 
+function playerName(athlete: EspnAthlete | null): string | null {
+  return athlete?.displayName ?? athlete?.fullName ?? athlete?.shortName ?? null;
+}
+
+function playerPosition(position: string | undefined): 'GK' | 'DEF' | 'MID' | 'FWD' {
+  const value = (position ?? '').toUpperCase();
+  if (value.includes('GK') || value.includes('GOAL')) return 'GK';
+  if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'DF', 'DEF'].some(token => value.includes(token))) return 'DEF';
+  if (['FW', 'FWD', 'ST', 'CF', 'LW', 'RW', 'ATT'].some(token => value.includes(token))) return 'FWD';
+  return 'MID';
+}
+
+function playerShirtNumber(athlete: EspnAthlete | null): number {
+  const parsed = Number(athlete?.jersey);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 99;
+}
+
+function eventId(fixtureId: string, detail: EspnDetail, type: string, teamCode: string, athleteId: string, index: number): string {
+  const clock = detail.clock?.value ?? detail.clock?.displayValue ?? detail.displayTime ?? index;
+  const espnType = detail.type?.id ?? detail.type?.text ?? type;
+  return `${fixtureId}-espn-${clock}-${teamCode}-${espnType}-${athleteId}`;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     headers: {
@@ -221,6 +254,7 @@ Deno.serve(async (request) => {
   let apiRequests = 0;
   let fixtureUpdates = 0;
   let eventFetches = 0;
+  let eventsInserted = 0;
   let possibleEvents = 0;
   let mappableEvents = 0;
 
@@ -254,7 +288,7 @@ Deno.serve(async (request) => {
       dbByCodePair.set(`${fixture.home_team_id}_${fixture.away_team_id}`, fixture);
     }
 
-    const espnByFixtureId = new Map<string, EspnEvent>();
+    const espnByFixtureId = new Map<string, { event: EspnEvent; teamIdToCode: Map<string, string> }>();
     const updates: Array<{
       id: string;
       status: string;
@@ -273,6 +307,9 @@ Deno.serve(async (request) => {
       const homeCode = home?.team?.abbreviation?.toUpperCase();
       const awayCode = away?.team?.abbreviation?.toUpperCase();
       if (!homeCode || !awayCode) continue;
+      const teamIdToCode = new Map<string, string>();
+      if (home?.team?.id) teamIdToCode.set(String(home.team.id), homeCode);
+      if (away?.team?.id) teamIdToCode.set(String(away.team.id), awayCode);
 
       const dbFixture = dbByCodePair.get(`${homeCode}_${awayCode}`);
       if (!dbFixture || dbFixture.edited_by_admin) continue;
@@ -292,7 +329,7 @@ Deno.serve(async (request) => {
       log.push(
         `ESPN update ${dbFixture.id}: ${mappedStatus} ${minuteFromStatus(status, mappedStatus) ?? '-'}' ${scoreNumber(home?.score) ?? '-'}-${scoreNumber(away?.score) ?? '-'}`,
       );
-      espnByFixtureId.set(dbFixture.id, event);
+      espnByFixtureId.set(dbFixture.id, { event, teamIdToCode });
     }
 
     if (updates.length > 0) {
@@ -312,38 +349,83 @@ Deno.serve(async (request) => {
     }
 
     const eventQueue = [...espnByFixtureId.entries()]
-      .filter(([fixtureId, event]) => {
+      .filter(([fixtureId, entry]) => {
         const status = updates.find(update => update.id === fixtureId)?.status;
-        const playByPlayAvailable = event.competitions?.[0] && 'playByPlayAvailable' in event.competitions[0]
-          ? Boolean((event.competitions[0] as Record<string, unknown>).playByPlayAvailable)
+        const playByPlayAvailable = entry.event.competitions?.[0] && 'playByPlayAvailable' in entry.event.competitions[0]
+          ? Boolean((entry.event.competitions[0] as Record<string, unknown>).playByPlayAvailable)
           : true;
         return playByPlayAvailable && (status === 'live' || status === 'finished');
-      })
-      .slice(0, maxEvents);
+      });
 
-    for (const [fixtureId, event] of eventQueue) {
-      const summaryUrl = `${ESPN_BASE}/summary?event=${event.id}`;
-      const summary = await fetchJson<EspnSummary>(summaryUrl);
-      apiRequests++;
-      eventFetches++;
+    for (const [queueIndex, [fixtureId, entry]] of eventQueue.entries()) {
+      const { event, teamIdToCode } = entry;
+      let summary: EspnSummary | null = null;
+      if (queueIndex < maxEvents) {
+        const summaryUrl = `${ESPN_BASE}/summary?event=${event.id}`;
+        summary = await fetchJson<EspnSummary>(summaryUrl);
+        apiRequests++;
+        eventFetches++;
+        log.push(`ESPN req ${apiRequests}: summary ${event.id}`);
+      }
 
       const details = [
-        ...(summary.details ?? []),
-        ...(summary.plays ?? []),
-        ...(summary.competitions?.[0]?.details ?? []),
+        ...(summary?.details ?? []),
+        ...(summary?.plays ?? []),
+        ...(summary?.competitions?.[0]?.details ?? []),
         ...(event.competitions?.[0]?.details ?? []),
       ];
       possibleEvents += details.length;
-      log.push(`ESPN req ${apiRequests}: summary ${event.id} -> ${details.length} details`);
+      log.push(`ESPN details ${event.id} -> ${details.length} details`);
 
+      const playerRows = [];
+      const eventRows = [];
       for (const [index, detail] of details.entries()) {
         const type = mapEventType(detail);
         const minute = eventMinute(detail);
-        const teamCode = detail.team?.abbreviation?.toUpperCase();
-        const athlete = detailAthlete(detail);
-        if (!type || !minute || !teamCode || !athlete?.name) continue;
+        const teamCode = detail.team?.abbreviation?.toUpperCase()
+          ?? (detail.team?.id ? teamIdToCode.get(String(detail.team.id)) : undefined);
+        const athlete = detail.athletesInvolved?.[0]
+          ?? detail.athletes?.[0]
+          ?? detail.participants?.find(participant => participant.athlete)?.athlete
+          ?? null;
+        const athleteId = athlete?.id ?? `${index}`;
+        const name = playerName(athlete);
+        if (!type || !minute || !teamCode || !name) continue;
         mappableEvents++;
-        log.push(`Mapped ESPN detail candidate ${fixtureId} #${index}: ${minute}' ${type} ${teamCode} ${athlete.name}`);
+        const playerId = `${teamCode}-ESPN-${athleteId}`;
+        playerRows.push({
+          id: playerId,
+          team_id: teamCode,
+          name,
+          shirt_number: playerShirtNumber(athlete),
+          position: playerPosition(athlete?.position),
+          source: SOURCE,
+          updated_at: syncedAt,
+        });
+        eventRows.push({
+          id: eventId(fixtureId, detail, type, teamCode, athleteId, index),
+          fixture_id: fixtureId,
+          minute,
+          type,
+          team_id: teamCode,
+          player_id: playerId,
+          assist_player_id: null,
+          source: SOURCE,
+          updated_at: syncedAt,
+        });
+        log.push(`Mapped ESPN detail ${fixtureId}: ${minute}' ${type} ${teamCode} ${name}`);
+      }
+
+      if (playerRows.length > 0) {
+        const uniquePlayers = [...new Map(playerRows.map(player => [player.id, player])).values()];
+        const { error } = await supabaseAdmin.from('players').upsert(uniquePlayers, { onConflict: 'id' });
+        if (error) throw error;
+      }
+
+      if (eventRows.length > 0) {
+        const { error } = await supabaseAdmin.from('match_events').upsert(eventRows, { onConflict: 'id' });
+        if (error) throw error;
+        eventsInserted += eventRows.length;
       }
     }
 
@@ -358,6 +440,7 @@ Deno.serve(async (request) => {
           scoreboardEvents: events.length,
           fixtureUpdates,
           eventFetches,
+          eventsInserted,
           possibleEvents,
           mappableEvents,
         },
@@ -378,6 +461,7 @@ Deno.serve(async (request) => {
           scoreboardEvents: 0,
           fixtureUpdates,
           eventFetches,
+          eventsInserted,
           possibleEvents,
           mappableEvents,
         },
