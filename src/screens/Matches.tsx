@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import { isoDay } from '../utils/format';
 import DateScroller from '../components/DateScroller';
@@ -20,6 +20,7 @@ function findDefaultDate(dates: string[]): string {
 
 export default function Matches() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // All unique fixture dates sorted ascending
   const allDates = useMemo(() => {
@@ -27,9 +28,18 @@ export default function Matches() {
     return [...days].sort();
   }, []);
 
-  const [selectedDate, setSelectedDate] = useState<string>(
-    allDates.length > 0 ? findDefaultDate(allDates) : ''
-  );
+  const dateParam = searchParams.get('date');
+  const selectedDate = allDates.includes(dateParam ?? '')
+    ? dateParam!
+    : allDates.length > 0 ? findDefaultDate(allDates) : '';
+
+  function selectDate(date: string) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('date', date);
+      return next;
+    });
+  }
 
   // Fixtures for the selected day, sorted by kickoff
   const dayFixtures = useMemo(() => {
@@ -51,7 +61,7 @@ export default function Matches() {
         <DateScroller
           dates={allDates}
           selectedDate={selectedDate}
-          onSelect={setSelectedDate}
+          onSelect={selectDate}
         />
       )}
 

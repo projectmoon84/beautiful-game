@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { dataService } from '../data/dataService';
-import BigType from '../components/BigType';
 import GroupTable from '../components/GroupTable';
 import FixtureCard from '../components/FixtureCard';
 import SquadList from '../components/SquadList';
@@ -18,7 +17,9 @@ const TEAM_TABS = [
 export default function TeamPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('standings');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab = TEAM_TABS.some(tab => tab.id === tabParam) ? tabParam! : 'standings';
 
   const team = id ? dataService.team(id) : undefined;
 
@@ -49,7 +50,19 @@ export default function TeamPage() {
   const ink = team.secondaryHex;
   const accent = team.tertiaryHex;
   const textureId = pickTexture(team.id);
-  const dividerColor = `${accent}60`;
+  const dividerColor = accent;
+
+  function setActiveTab(tabId: string) {
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        if (tabId === 'standings') next.delete('tab');
+        else next.set('tab', tabId);
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   return (
     <div className="min-h-full flex flex-col relative" style={{ background: bg }}>
@@ -67,71 +80,61 @@ export default function TeamPage() {
       {/* Content */}
       <div className="relative z-10 flex flex-col min-h-full">
 
-        {/* Back button */}
-        <button
-          onClick={() => navigate(-1)}
-          className="absolute top-4 left-4 z-20 w-8 h-8 rounded-full flex items-center justify-center text-lg font-bold"
-          style={{ background: `${ink}22`, color: ink }}
-          aria-label="Back"
-        >
-          ‹
-        </button>
+        <div className="absolute left-4 top-4 z-20 flex h-8 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-bold active:opacity-70"
+            style={{ background: `${ink}22`, color: ink }}
+            aria-label="Back"
+          >
+            ‹
+          </button>
+          <span className="text-[24px] font-semibold leading-none" style={{ color: ink }}>
+            {team.flagEmoji}
+          </span>
+        </div>
 
         {/* ── Header ── */}
-        <div className="px-5 pt-14 pb-0">
-
-          {/* Flag */}
-          <span className="text-2xl leading-none">{team.flagEmoji}</span>
-
-          {/* Team name */}
-          <div className="mt-2 mb-4">
-            <BigType size="2xl" color={ink}>{team.name}</BigType>
-          </div>
-
-          {/* Facts grid */}
-          <div
-            className="flex py-3 gap-8"
-            style={{ borderTop: `1px solid ${dividerColor}`, borderBottom: `1px solid ${dividerColor}` }}
-          >
-            <div>
-              <p className="text-[10px] font-bold tracking-[0.08em] uppercase mb-0.5" style={{ color: ink, opacity: 0.55 }}>
-                Seed
-              </p>
-              <p className="text-[18px] font-bold leading-none" style={{ color: ink, fontFamily: '"Instrument Sans", system-ui, sans-serif', letterSpacing: '-0.02em' }}>
-                {team.seed}
-              </p>
+        <div className="flex flex-col items-start gap-2 px-4 pb-10 pt-14">
+          <div className="flex w-full flex-col items-start justify-center">
+            <div className="flex h-12 w-full items-end gap-2 overflow-hidden">
+              <h1
+                className="flex min-w-0 flex-1 flex-col justify-end text-[64px] font-bold uppercase leading-[0.82]"
+                style={{
+                  color: ink,
+                  fontFamily: '"Instrument Sans", system-ui, sans-serif',
+                }}
+              >
+                {team.name}
+              </h1>
             </div>
-            <div>
-              <p className="text-[10px] font-bold tracking-[0.08em] uppercase mb-0.5" style={{ color: ink, opacity: 0.55 }}>
-                Title odds
-              </p>
-              <p className="text-[18px] font-bold leading-none" style={{ color: ink, fontFamily: '"Instrument Sans", system-ui, sans-serif', letterSpacing: '-0.02em' }}>
-                {team.titleOdds}
-              </p>
+
+            <div className="flex w-full flex-col items-center gap-0.5 pt-6">
+              <div className="flex w-full items-start gap-2">
+                <TeamMetaItem label="Seed" value={String(team.seed)} color={ink} ruleColor={dividerColor} />
+                <TeamMetaItem label="Title odds" value={team.titleOdds} color={ink} ruleColor={dividerColor} />
+              </div>
+
+              <TeamMetaItem
+                label="That’s a fact"
+                value={displayFact}
+                color={ink}
+                ruleColor={dividerColor}
+                fullWidth
+              />
+
+              {venue && (
+                <TeamMetaItem
+                  label="Venue"
+                  value={`${venue.stadium}, ${venue.city}`}
+                  color={ink}
+                  ruleColor={dividerColor}
+                  fullWidth
+                />
+              )}
             </div>
           </div>
-
-          {/* Trivia fact */}
-          <div className="py-3" style={{ borderBottom: `1px solid ${dividerColor}` }}>
-            <p className="text-[10px] font-bold tracking-[0.08em] uppercase mb-1" style={{ color: ink, opacity: 0.55 }}>
-              That's a fact
-            </p>
-            <p className="text-[13px] leading-snug" style={{ color: ink, opacity: 0.85 }}>
-              {displayFact}
-            </p>
-          </div>
-
-          {/* Venue */}
-          {venue && (
-            <div className="py-3" style={{ borderBottom: `1px solid ${dividerColor}` }}>
-              <p className="text-[10px] font-bold tracking-[0.08em] uppercase mb-1" style={{ color: ink, opacity: 0.55 }}>
-                Venue
-              </p>
-              <p className="text-[13px] leading-none font-medium" style={{ color: ink, opacity: 0.85 }}>
-                {venue.stadium}, {venue.city}
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Sub-tabs */}
@@ -140,7 +143,7 @@ export default function TeamPage() {
           activeId={activeTab}
           onChange={setActiveTab}
           activeColor={ink}
-          activeLineColor={accent}
+          activeLineColor={ink}
           bg={bg}
         />
 
@@ -152,17 +155,15 @@ export default function TeamPage() {
               label={`Group ${team.groupId}`}
               rows={standings}
               tint={ink}
-              onTeamClick={teamId => {
-                if (teamId !== team.id) navigate(`/team/${teamId}`);
-              }}
+              onTeamClick={teamId => navigate(`/team/${teamId}`)}
             />
           </div>
         )}
 
         {activeTab === 'matches' && (
-          <div className="px-4 pt-5 pb-8 flex flex-col gap-3">
+          <div className="flex flex-col pb-8">
             {teamFixtures.length === 0 ? (
-              <div className="flex flex-col items-center py-16 opacity-40 text-center">
+              <div className="flex flex-col items-center px-8 py-16 opacity-40 text-center">
                 <span className="text-4xl mb-3">⚽</span>
                 <p className="text-sm font-medium" style={{ color: ink }}>No fixtures yet</p>
               </div>
@@ -196,6 +197,39 @@ export default function TeamPage() {
           )
         )}
 
+      </div>
+    </div>
+  );
+}
+
+function TeamMetaItem({
+  label,
+  value,
+  color,
+  ruleColor,
+  fullWidth = false,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  ruleColor: string;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div
+      className={[
+        'flex items-center gap-4 border-t py-2',
+        fullWidth ? 'w-full' : 'min-w-0 flex-1',
+      ].join(' ')}
+      style={{ borderColor: ruleColor }}
+    >
+      <div className="flex min-w-0 flex-1 flex-col items-start justify-center gap-0.5">
+        <div className="w-full text-[12px] font-semibold leading-normal" style={{ color }}>
+          {label}
+        </div>
+        <div className="w-full text-[12px] font-normal leading-normal" style={{ color }}>
+          {value}
+        </div>
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ interface SubTabsProps {
   onChange: (id: string) => void;
   /** Colour used for active text. Defaults to #14161a. */
   activeColor?: string;
-  /** Colour used for the active underline. Defaults to activeColor. */
+  /** @deprecated Block tabs use activeColor for the active outline. */
   activeLineColor?: string;
   /** Inactive text colour. Defaults to #14161a at 35% opacity. */
   inactiveColor?: string;
@@ -18,7 +18,7 @@ interface SubTabsProps {
 }
 
 /**
- * SubTabs — underline-style horizontal tab switcher.
+ * SubTabs — block-style horizontal tab switcher.
  * Used in Standings (Groups/Knockouts) and TeamPage (Standings/Matches/Squad).
  */
 export default function SubTabs({
@@ -30,16 +30,14 @@ export default function SubTabs({
   inactiveColor,
   bg,
 }: SubTabsProps) {
-  const lineColor = activeLineColor ?? activeColor;
-  const inactive = inactiveColor ?? `${activeColor}59`; // 35% opacity fallback
+  const outlineColor = activeLineColor ?? activeColor;
+  const surface = bg ?? 'var(--surface)';
+  const inactive = inactiveColor ?? surface;
 
   return (
     <div
-      className="flex border-b"
-      style={{
-        background: bg ?? 'transparent',
-        borderColor: `${activeColor}22`,
-      }}
+      className="flex h-[76px] overflow-hidden"
+      style={{ background: surface }}
     >
       {tabs.map(tab => {
         const isActive = tab.id === activeId;
@@ -48,16 +46,16 @@ export default function SubTabs({
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
-            className="relative flex-1 py-3 text-[13px] font-semibold tracking-wide transition-opacity"
-            style={{ color: isActive ? activeColor : inactive }}
+            className="flex h-full flex-1 items-center justify-center px-3 text-center text-[12px] font-semibold leading-none transition-opacity"
+            style={{
+              background: isActive ? surface : activeColor,
+              borderTop: isActive ? 'none' : `3px solid ${activeColor}`,
+              color: isActive ? activeColor : inactive,
+              outline: isActive ? `6px solid ${outlineColor}` : 'none',
+              outlineOffset: isActive ? '-6px' : undefined,
+            }}
           >
             {tab.label}
-            {isActive && (
-              <span
-                className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[2.5px] w-10 rounded-full"
-                style={{ background: lineColor }}
-              />
-            )}
           </button>
         );
       })}

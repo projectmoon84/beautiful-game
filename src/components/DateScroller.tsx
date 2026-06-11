@@ -41,13 +41,10 @@ export default function DateScroller({ dates, selectedDate, onSelect }: DateScro
   const isToday = (d: string) => d === new Date().toISOString().slice(0, 10);
 
   return (
-    <div
-      className="sticky top-0 z-30 h-20"
-      style={{ background: 'var(--surface)' }}
-    >
+    <div className="sticky top-0 z-30 h-[76px]" style={{ background: 'var(--surface)' }}>
       <div
         ref={containerRef}
-        className="flex h-full items-start overflow-x-auto px-4"
+        className="flex h-full overflow-x-auto"
         style={{
           scrollSnapType: 'x mandatory',
           scrollbarWidth: 'none',
@@ -71,15 +68,19 @@ export default function DateScroller({ dates, selectedDate, onSelect }: DateScro
                 flexShrink: 0,
                 width: 'calc(100% / 3)',
                 scrollSnapAlign: 'center',
+                background: selected ? 'var(--surface)' : 'var(--black)',
+                color: selected ? 'var(--black)' : 'var(--surface)',
+                outline: selected ? '6px solid var(--black)' : 'none',
+                outlineOffset: selected ? '-6px' : undefined,
+                borderTop: selected ? 'none' : '3px solid var(--black)',
               }}
               className={[
-                'mt-2 flex h-12 flex-col items-center justify-start border-t transition-opacity',
-                selected ? 'border-t-[3px] border-[var(--black)] opacity-100' : 'border-t border-[var(--black)] opacity-30',
+                'flex h-full flex-col items-center justify-center transition-opacity',
               ].join(' ')}
             >
               <span
                 className={[
-                  'pt-3 text-center text-[12px] font-semibold leading-none text-[var(--black)]',
+                  'text-center text-[12px] font-semibold leading-none',
                   today ? 'uppercase' : '',
                 ].join(' ')}
               >

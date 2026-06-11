@@ -4,6 +4,7 @@
  * Not linked from the nav; access via http://localhost:5173/sandbox
  */
 
+import { useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import BigType from '../components/BigType';
 import Pill from '../components/Pill';
@@ -21,6 +22,7 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 export default function Sandbox() {
+  const navigate = useNavigate();
   const bra = dataService.team('BRA')!;
   const por = dataService.team('POR')!;
   const arg = dataService.team('ARG')!;
@@ -107,11 +109,11 @@ export default function Sandbox() {
 
       {/* ── GroupTable: full ── */}
       <SectionHeader title="GroupTable — full (Group C)" />
-      <GroupTable label="Group C" rows={groupCStandings} />
+      <GroupTable label="Group C" rows={groupCStandings} onTeamClick={teamId => navigate(`/team/${teamId}`)} />
 
       {/* ── GroupTable: compact ── */}
       <SectionHeader title="GroupTable — compact (Group A)" />
-      <GroupTable label="Group A" rows={groupAStandings} compact />
+      <GroupTable label="Group A" rows={groupAStandings} compact onTeamClick={teamId => navigate(`/team/${teamId}`)} />
 
       {/* ── Player stats (dataService check) ── */}
       <SectionHeader title="Player stats (dataService.playerStats)" />

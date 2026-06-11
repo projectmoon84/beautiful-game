@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import GroupTable from '../components/GroupTable';
 import KnockoutBracket from '../components/KnockoutBracket';
@@ -12,8 +11,19 @@ const TABS = [
 
 export default function Standings() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('groups');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab = TABS.some(tab => tab.id === tabParam) ? tabParam! : 'groups';
   const allGroups = dataService.allGroups();
+
+  function setActiveTab(tabId: string) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (tabId === 'groups') next.delete('tab');
+      else next.set('tab', tabId);
+      return next;
+    });
+  }
 
   return (
     <div className="flex min-h-full flex-col" style={{ background: 'var(--surface)' }}>

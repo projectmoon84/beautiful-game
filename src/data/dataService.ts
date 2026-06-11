@@ -84,7 +84,7 @@ async function loadFromSupabase(): Promise<void> {
 
   if (teamsData) {
     const realTeamRows = teamsData.filter(row => row.fifa_code);
-    const visibleTeamRows = realTeamRows.length >= 40 ? realTeamRows : teamsData;
+    const visibleTeamRows = realTeamRows.length > 0 ? realTeamRows : teamsData;
 
     teamCache = new Map(visibleTeamRows.map(row => [row.id, {
       id:           row.id,
