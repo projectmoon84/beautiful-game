@@ -269,7 +269,8 @@ Deno.serve(async (request) => {
 
     // ── 5. Fetch events for each, up to MAX_EVENTS requests ─────────────
     let eventsInserted = 0;
-    for (const fixture of needEvents.slice(0, maxEvents)) {
+    const eventFetchQueue = needEvents.slice(0, maxEvents);
+    for (const fixture of eventFetchQueue) {
       const key   = `${fixture.home_team_id}_${fixture.away_team_id}`;
       const afId  = afFixtureIndex.get(key);
       if (!afId) { log.push(`WARN: no AF fixture ID for ${key}`); continue; }
@@ -342,7 +343,7 @@ Deno.serve(async (request) => {
     log.push(`Inserted ${eventsInserted} match events`);
 
     // ── 6. Squads — fetch teams with thin squads first ────────────────
-    const remainingBudget = Math.max(0, maxEvents - needEvents.slice(0, maxEvents).length);
+    const remainingBudget = Math.max(0, maxEvents - eventFetchQueue.length);
     const { data: existingPlayers } = await supabaseAdmin
       .from('players')
       .select('team_id');
@@ -354,13 +355,13 @@ Deno.serve(async (request) => {
       .map(item => ({ item, ourCode: afTeamToOurs.get(item.team.id) }))
       .filter(entry => entry.ourCode && (playerCountsByTeam.get(entry.ourCode) ?? 0) < 23);
 
+    let squadsFetched = 0;
     if (!skipSquads && thinTeams.length > 0 && remainingBudget > 0) {
       log.push(`${thinTeams.length} teams have fewer than 23 players — fetching squads`);
       const { data: lockedPlayers } = await supabaseAdmin
         .from('players').select('id').eq('edited_by_admin', true);
       const lockedPlayerIds = new Set((lockedPlayers ?? []).map((r: { id: string }) => r.id));
 
-      let squadsFetched = 0;
       for (const { item, ourCode } of thinTeams.slice(0, remainingBudget)) {
         if (!ourCode) continue;
 
@@ -396,7 +397,21 @@ Deno.serve(async (request) => {
     log.push(`Total API requests this run: ${reqCount}`);
 
     return new Response(
-      JSON.stringify({ ok: true, reqCount, log }),
+      JSON.stringify({
+        ok: true,
+        reqCount,
+        counts: {
+          apiRequests: reqCount,
+          fixtureUpdates: fixtureUpdates.length,
+          liveFixtures: liveDbFixtures.length,
+          finishedFixturesNeedingEvents: finishedNeedingEvents.length,
+          eventFetches: eventFetchQueue.length,
+          eventsInserted,
+          thinTeams: thinTeams.length,
+          squadsFetched,
+        },
+        log,
+      }),
       { headers: { 'Content-Type': 'application/json' } },
     );
   } catch (err) {

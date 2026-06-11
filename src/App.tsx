@@ -15,6 +15,7 @@ import AdminInsights from './screens/admin/AdminInsights';
 import AdminNews from './screens/admin/AdminNews';
 import AdminStickers from './screens/admin/AdminStickers';
 import AdminTextures from './screens/admin/AdminTextures';
+import AdminSync from './screens/admin/AdminSync';
 
 const router = createBrowserRouter([
   {
@@ -41,6 +42,7 @@ const router = createBrowserRouter([
       { path: 'news',     element: <AdminNews /> },
       { path: 'stickers', element: <AdminStickers /> },
       { path: 'textures', element: <AdminTextures /> },
+      { path: 'sync',     element: <AdminSync /> },
     ],
   },
 ]);

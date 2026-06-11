@@ -10,6 +10,7 @@ const NAV = [
   { to: '/admin/news',     label: 'News' },
   { to: '/admin/stickers', label: 'Stickers' },
   { to: '/admin/textures', label: 'Textures' },
+  { to: '/admin/sync',     label: 'Sync' },
 ];
 
 export default function AdminShell() {

@@ -27,6 +27,11 @@ type SyncJob = {
   attempts: number;
 };
 
+type FunctionResult = {
+  status: number;
+  payload: Record<string, unknown>;
+};
+
 type FixtureRow = {
   id: string;
   kickoff_utc: string;
@@ -192,7 +197,76 @@ async function providerJobsDoneToday(ukDate: string): Promise<number> {
   return count ?? 0;
 }
 
-async function invokeFunction(name: string, body: Record<string, unknown>) {
+function responseLogFromPayload(payload: Record<string, unknown>): string[] {
+  return Array.isArray(payload.log)
+    ? payload.log.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+function dataCountsFromPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const summary = payload.summary;
+  const counts = payload.counts;
+
+  if (counts && typeof counts === 'object' && !Array.isArray(counts)) {
+    return counts as Record<string, unknown>;
+  }
+
+  const extracted: Record<string, unknown> = {};
+  for (const key of ['reqCount', 'groups', 'teams', 'players', 'fixtures', 'eventsInserted', 'fixtureUpdates', 'squadsFetched']) {
+    const value = payload[key];
+    if (typeof value === 'number') extracted[key] = value;
+  }
+
+  if (summary && typeof summary === 'object' && !Array.isArray(summary)) {
+    return { ...extracted, ...(summary as Record<string, unknown>) };
+  }
+
+  return extracted;
+}
+
+async function createRunLog(job: SyncJob, requestBody: Record<string, unknown>): Promise<string> {
+  const { data, error } = await supabaseAdmin
+    .from('sync_run_logs')
+    .insert({
+      job_id: job.id,
+      fixture_id: job.fixture_id,
+      uk_date: job.uk_date,
+      provider: job.provider,
+      kind: job.kind,
+      request_body: requestBody,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function finishRunLog(
+  id: string,
+  values: {
+    success: boolean;
+    statusCode?: number;
+    payload?: Record<string, unknown>;
+    error?: string;
+  },
+) {
+  const payload = values.payload ?? {};
+  const { error } = await supabaseAdmin
+    .from('sync_run_logs')
+    .update({
+      finished_at: new Date().toISOString(),
+      success: values.success,
+      status_code: values.statusCode ?? null,
+      response_summary: payload,
+      response_log: responseLogFromPayload(payload),
+      data_counts: dataCountsFromPayload(payload),
+      error: values.error ?? null,
+    })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+async function invokeFunction(name: string, body: Record<string, unknown>): Promise<FunctionResult> {
   const response = await fetch(`${PROJECT_URL}/functions/v1/${name}`, {
     method: 'POST',
     headers: {
@@ -205,7 +279,7 @@ async function invokeFunction(name: string, body: Record<string, unknown>) {
   if (!response.ok || payload?.ok === false) {
     throw new Error(`${name} failed: ${JSON.stringify(payload)}`);
   }
-  return payload;
+  return { status: response.status, payload };
 }
 
 async function markJob(id: string, values: Record<string, unknown>) {
@@ -290,15 +364,32 @@ async function runDueJobs(now: Date, log: string[]) {
         last_error: null,
       });
 
-      if (job.provider === 'openfootball') {
-        await invokeFunction('sync-openfootball', { reason: job.kind });
-      } else {
-        await invokeFunction('sync-api-football', {
+      const requestBody = job.provider === 'openfootball'
+        ? { reason: job.kind }
+        : {
           reason: job.kind,
           fixtureId: job.fixture_id,
           skipSquads: true,
           maxEvents: 4,
+        };
+      const runLogId = await createRunLog(job, requestBody);
+
+      try {
+        const result = job.provider === 'openfootball'
+          ? await invokeFunction('sync-openfootball', requestBody)
+          : await invokeFunction('sync-api-football', requestBody);
+
+        await finishRunLog(runLogId, {
+          success: true,
+          statusCode: result.status,
+          payload: result.payload,
         });
+      } catch (err) {
+        await finishRunLog(runLogId, {
+          success: false,
+          error: String(err),
+        });
+        throw err;
       }
 
       await markJob(job.id, {
