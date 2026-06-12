@@ -183,7 +183,7 @@ Deno.serve(async (request) => {
     // ── 3. Load our DB fixtures ────────────────────────────────────────
     const { data: dbFixtures, error: fxErr } = await supabaseAdmin
       .from('fixtures')
-      .select('id, home_team_id, away_team_id, status, edited_by_admin');
+      .select('id, home_team_id, away_team_id, status, source, edited_by_admin');
     if (fxErr) throw fxErr;
 
     // Build reverse map: "HOME_AWAY" → our fixture row
@@ -207,6 +207,10 @@ Deno.serve(async (request) => {
       if (!state) continue;
       const dbFix = ourFixtureIndex.get(key);
       if (!dbFix || dbFix.edited_by_admin) continue;
+      if (dbFix.source === 'espn' && ['live', 'finished'].includes(dbFix.status)) {
+        log.push(`Skipped ${dbFix.id}: ESPN-owned ${dbFix.status} fixture`);
+        continue;
+      }
       fixtureUpdates.push({
         id: dbFix.id,
         status: state.status,

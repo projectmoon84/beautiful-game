@@ -16,6 +16,7 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const RUNNER_BATCH_SIZE = Number(Deno.env.get('SYNC_RUNNER_BATCH_SIZE') ?? 12);
 const ESPN_DAILY_SYNC_CAP = Number(Deno.env.get('ESPN_DAILY_SYNC_CAP') ?? 1000);
 const API_FOOTBALL_DAILY_SYNC_CAP = Number(Deno.env.get('API_FOOTBALL_DAILY_SYNC_CAP') ?? Deno.env.get('SYNC_DAILY_PROVIDER_CAP') ?? 36);
+const RUNNING_JOB_STALE_AFTER_MINUTES = Number(Deno.env.get('SYNC_RUNNING_JOB_STALE_AFTER_MINUTES') ?? 5);
 
 type SyncJob = {
   id: string;
@@ -312,6 +313,58 @@ async function markJob(id: string, values: Record<string, unknown>) {
   if (error) throw error;
 }
 
+async function claimJob(job: SyncJob): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('sync_schedule_jobs')
+    .update({
+      status: 'running',
+      attempts: job.attempts + 1,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', job.id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function recoverStaleRunningJobs(now: Date, log: string[]) {
+  const staleBefore = new Date(now.getTime() - RUNNING_JOB_STALE_AFTER_MINUTES * 60_000).toISOString();
+  const { data: recovered, error } = await supabaseAdmin
+    .from('sync_schedule_jobs')
+    .update({
+      status: 'pending',
+      last_error: `Recovered stale running job after ${RUNNING_JOB_STALE_AFTER_MINUTES} minutes`,
+      updated_at: now.toISOString(),
+    })
+    .eq('status', 'running')
+    .lte('updated_at', staleBefore)
+    .lt('attempts', 3)
+    .select('id');
+  if (error) throw error;
+  if ((recovered ?? []).length > 0) {
+    log.push(`Recovered ${(recovered ?? []).length} stale running job(s)`);
+  }
+
+  const { data: failed, error: failedError } = await supabaseAdmin
+    .from('sync_schedule_jobs')
+    .update({
+      status: 'failed',
+      last_error: `Marked stale running job failed after ${RUNNING_JOB_STALE_AFTER_MINUTES} minutes`,
+      updated_at: now.toISOString(),
+    })
+    .eq('status', 'running')
+    .lte('updated_at', staleBefore)
+    .gte('attempts', 3)
+    .select('id');
+  if (failedError) throw failedError;
+  if ((failed ?? []).length > 0) {
+    log.push(`Marked ${(failed ?? []).length} stale running job(s) failed`);
+  }
+}
+
 async function ensurePostFinishJobs(job: SyncJob, log: string[]) {
   if (!job.fixture_id) return;
 
@@ -354,6 +407,8 @@ async function ensurePostFinishJobs(job: SyncJob, log: string[]) {
 }
 
 async function runDueJobs(now: Date, log: string[]) {
+  await recoverStaleRunningJobs(now, log);
+
   const { data, error } = await supabaseAdmin
     .from('sync_schedule_jobs')
     .select('id, fixture_id, uk_date, run_at, kind, provider, priority, attempts')
@@ -381,11 +436,11 @@ async function runDueJobs(now: Date, log: string[]) {
     }
 
     try {
-      await markJob(job.id, {
-        status: 'running',
-        attempts: job.attempts + 1,
-        last_error: null,
-      });
+      const claimed = await claimJob(job);
+      if (!claimed) {
+        log.push(`Skipped ${job.kind}${job.fixture_id ? ` for ${job.fixture_id}` : ''}: already claimed`);
+        continue;
+      }
 
       const requestBody = job.provider === 'openfootball'
         ? { reason: job.kind }
@@ -393,7 +448,7 @@ async function runDueJobs(now: Date, log: string[]) {
           reason: job.kind,
           fixtureId: job.fixture_id,
           skipSquads: true,
-          maxEvents: job.provider === 'espn' ? 0 : 4,
+          maxEvents: job.provider === 'espn' ? 1 : 4,
         };
       const runLogId = await createRunLog(job, requestBody);
 
