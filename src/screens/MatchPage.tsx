@@ -64,10 +64,11 @@ export default function MatchPage() {
   const isScored = fixture.status === 'live' || fixture.status === 'finished';
   const isLive = fixture.status === 'live';
   const isUpcoming = fixture.status === 'scheduled';
+  const hasTimeline = isScored && events.length > 0;
   const awayInk = away.secondaryHex;
 
   return (
-    <div className={['min-h-full overflow-x-hidden bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>
+    <div className={['flex min-h-[calc(100dvh-6rem)] flex-col overflow-x-hidden bg-[var(--surface)]', isLive ? 'pb-14' : ''].join(' ')}>
       <button
         type="button"
         onClick={() => navigate(-1)}
@@ -77,7 +78,7 @@ export default function MatchPage() {
         ‹
       </button>
 
-      <div className="relative w-full overflow-hidden">
+      <div className="relative flex w-full flex-1 flex-col overflow-hidden">
         {/* Score header — pitch visuals + team codes + scores */}
         <section className="relative w-full">
           <div className="absolute inset-0 z-0 flex">
@@ -126,14 +127,14 @@ export default function MatchPage() {
         </section>
 
         {/* Events + info rows — grows with content, pushes page down */}
-        <div className="relative w-full">
+        <div className="relative flex w-full flex-1 flex-col">
           <div className="absolute inset-0 z-0 flex">
             <div className="flex-1" style={{ background: home.primaryHex }} />
             <div className="flex-1" style={{ background: away.primaryHex }} />
           </div>
           <div className="absolute inset-y-0 left-1/2 z-10 w-px -translate-x-px bg-white/20" />
 
-          {isScored && events.length > 0 && (
+          {hasTimeline && (
             <EventTimeline
               events={events}
               homeTeamId={home.id}
@@ -142,7 +143,7 @@ export default function MatchPage() {
             />
           )}
 
-          <div className="relative z-20 flex">
+          <div className={['relative z-20 mt-auto flex', hasTimeline ? 'pt-20' : ''].join(' ')}>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
               {isUpcoming && venue && (
                 <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
