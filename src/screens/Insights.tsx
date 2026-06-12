@@ -33,7 +33,7 @@ export default function Insights() {
   const involvement = useMemo(() => topInvolvementRows(stats), [stats]);
 
   return (
-    <div className="min-h-full bg-[var(--surface)] pb-8 text-[var(--black)]">
+    <div className="min-h-full bg-[var(--surface)] text-[var(--black)]">
       <PulseStrip
         matches={pulse.matches}
         goals={pulse.goals}
@@ -203,7 +203,7 @@ function LeaderboardSection({
       <SectionHeader title={title}>
         <RecordHeader records={records} caption={caption} />
       </SectionHeader>
-      <div className="mt-2">
+      <div>
         {leaderValue > 0 ? rows.map(row => (
           <ProportionalRow
             key={`${title}-${row.stat.playerId}`}
@@ -276,7 +276,7 @@ function InvolvementSection({
         </div>
       </SectionHeader>
 
-      <div className="mt-2 flex flex-col gap-1.5">
+      <div className="flex flex-col">
         {leaderTotal > 0 ? rows.map(row => (
           <SplitRow
             key={`involvement-${row.stat.playerId}`}
@@ -358,14 +358,14 @@ function EmptyRow({ label }: { label: string }) {
 
 function RivalryBlock() {
   return (
-    <section className="pb-2">
+    <section>
       <SectionHeader title="The rivalry">
         <p className="mt-[5px] text-[12px] font-semibold leading-tight text-black/50">
           World Cup only · through Qatar 2022
         </p>
       </SectionHeader>
 
-      <div className="flex items-center gap-3 px-3.5 pb-1 pt-3.5">
+      <div className="flex items-center gap-3 px-4 py-3">
         <div className="flex-1 text-right text-[20px] font-bold uppercase leading-none">
           {MESSI_RONALDO.left.name} <span className="font-normal">{MESSI_RONALDO.left.flag}</span>
         </div>
@@ -375,7 +375,7 @@ function RivalryBlock() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2.5 px-3.5 pb-[18px] pt-1.5">
+      <div className="flex flex-col">
         {MESSI_RONALDO.rows.map(row => (
           <DivergingRow key={row.label} label={row.label} left={row.l} right={row.r} />
         ))}
