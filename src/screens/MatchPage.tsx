@@ -77,84 +77,86 @@ export default function MatchPage() {
         ‹
       </button>
 
-      {/* Score header — pitch visuals + team codes + scores */}
-      <section className="relative w-full overflow-hidden">
-        <div className="absolute inset-0 z-0 flex">
-          <div className="flex-1" style={{ background: home.primaryHex }} />
-          <div className="flex-1" style={{ background: away.primaryHex }} />
-        </div>
+      <div className="relative w-full overflow-hidden">
+        {/* Score header — pitch visuals + team codes + scores */}
+        <section className="relative w-full">
+          <div className="absolute inset-0 z-0 flex">
+            <div className="flex-1" style={{ background: home.primaryHex }} />
+            <div className="flex-1" style={{ background: away.primaryHex }} />
+          </div>
 
-        <PitchMarkings />
+          <PitchMarkings />
 
-        <div className="relative z-20 flex">
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4" style={{ color: home.secondaryHex }}>
-            <div className="text-[12px] font-medium leading-none">
-              {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
+          <div className="relative z-20 flex">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4" style={{ color: home.secondaryHex }}>
+              <div className="text-[12px] font-medium leading-none">
+                {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
+              </div>
+              <TeamHeader
+                align="home"
+                code={home.shortCode}
+                marker={isScored ? String(fixture.homeScore ?? 0) : home.flagEmoji}
+                color={home.secondaryHex}
+                scored={isScored}
+              />
             </div>
-            <TeamHeader
-              align="home"
-              code={home.shortCode}
-              marker={isScored ? String(fixture.homeScore ?? 0) : home.flagEmoji}
-              color={home.secondaryHex}
-              scored={isScored}
-            />
-          </div>
 
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4" style={{ color: awayInk }}>
-            <div className="text-right text-[12px] font-medium leading-none" style={{ color: awayInk }}>
-              Group {fixture.groupId}
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4" style={{ color: awayInk }}>
+              <div className="text-right text-[12px] font-medium leading-none" style={{ color: awayInk }}>
+                Group {fixture.groupId}
+              </div>
+              <TeamHeader
+                align="away"
+                code={away.shortCode}
+                marker={isScored ? String(fixture.awayScore ?? 0) : away.flagEmoji}
+                color={awayInk}
+                scored={isScored}
+              />
             </div>
-            <TeamHeader
-              align="away"
-              code={away.shortCode}
-              marker={isScored ? String(fixture.awayScore ?? 0) : away.flagEmoji}
-              color={awayInk}
-              scored={isScored}
+          </div>
+
+          {isLive && (
+            <div className="absolute left-[54%] top-4 z-30 flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1 pr-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#5EE9B5]" />
+              <span className="text-[10px] font-medium leading-none text-white">
+                {fixture.minute ?? 0} min
+              </span>
+            </div>
+          )}
+        </section>
+
+        {/* Events + info rows — grows with content, pushes page down */}
+        <div className="relative w-full">
+          <div className="absolute inset-0 z-0 flex">
+            <div className="flex-1" style={{ background: home.primaryHex }} />
+            <div className="flex-1" style={{ background: away.primaryHex }} />
+          </div>
+          <div className="absolute inset-y-0 left-1/2 z-10 w-px -translate-x-px bg-white/20" />
+
+          {isScored && events.length > 0 && (
+            <EventTimeline
+              events={events}
+              homeTeamId={home.id}
+              homeColor={home.secondaryHex}
+              awayColor={awayInk}
             />
-          </div>
-        </div>
+          )}
 
-        {isLive && (
-          <div className="absolute left-[54%] top-4 z-30 flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1 pr-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#5EE9B5]" />
-            <span className="text-[10px] font-medium leading-none text-white">
-              {fixture.minute ?? 0} min
-            </span>
-          </div>
-        )}
-      </section>
-
-      {/* Events + info rows — grows with content, pushes page down */}
-      <div className="relative w-full">
-        <div className="absolute inset-0 z-0 flex">
-          <div className="flex-1" style={{ background: home.primaryHex }} />
-          <div className="flex-1" style={{ background: away.primaryHex }} />
-        </div>
-        <div className="absolute inset-y-0 left-1/2 z-10 w-px -translate-x-px bg-white/20" />
-
-        {isScored && events.length > 0 && (
-          <EventTimeline
-            events={events}
-            homeTeamId={home.id}
-            homeColor={home.secondaryHex}
-            awayColor={awayInk}
-          />
-        )}
-
-        <div className="relative z-20 flex">
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
-            {isUpcoming && venue && (
-              <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
-            )}
-            <InfoRow label="Title odds" value={home.titleOdds} color={home.secondaryHex} />
-            <InfoRow label="That's a fact" value={homeFact} color={home.secondaryHex} />
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: awayInk }}>
-            {isUpcoming && (
-              <InfoRow label="Last time" value={`${home.shortCode} 1 - 1 ${away.shortCode}`} color={awayInk} align="right" />
-            )}
-            <InfoRow label="Title odds" value={away.titleOdds} color={awayInk} align="right" />
-            <InfoRow label="That's a fact" value={awayFact} color={awayInk} align="right" />
+          <div className="relative z-20 flex">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
+              {isUpcoming && venue && (
+                <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
+              )}
+              <InfoRow label="Title odds" value={home.titleOdds} color={home.secondaryHex} />
+              <InfoRow label="That's a fact" value={homeFact} color={home.secondaryHex} />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: awayInk }}>
+              {isUpcoming && (
+                <InfoRow label="Last time" value={`${home.shortCode} 1 - 1 ${away.shortCode}`} color={awayInk} align="right" />
+              )}
+              <InfoRow label="Title odds" value={away.titleOdds} color={awayInk} align="right" />
+              <InfoRow label="That's a fact" value={awayFact} color={awayInk} align="right" />
+            </div>
           </div>
         </div>
       </div>
