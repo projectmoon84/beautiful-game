@@ -4,7 +4,7 @@
  * Runs every minute via pg_cron. It:
  * - plans the current UK day once 04:00 UK has passed
  * - creates evenly-spread sync jobs for each fixture on that UK date
- * - executes due jobs in small batches against the live provider sync
+ * - executes due jobs in small batches against ESPN, the only scheduled live provider
  * - adds post-FT checks after a fixture is actually marked finished
  */
 
@@ -15,7 +15,6 @@ const PROJECT_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const RUNNER_BATCH_SIZE = Number(Deno.env.get('SYNC_RUNNER_BATCH_SIZE') ?? 12);
 const ESPN_DAILY_SYNC_CAP = Number(Deno.env.get('ESPN_DAILY_SYNC_CAP') ?? 1000);
-const API_FOOTBALL_DAILY_SYNC_CAP = Number(Deno.env.get('API_FOOTBALL_DAILY_SYNC_CAP') ?? Deno.env.get('SYNC_DAILY_PROVIDER_CAP') ?? 36);
 const RUNNING_JOB_STALE_AFTER_MINUTES = Number(Deno.env.get('SYNC_RUNNING_JOB_STALE_AFTER_MINUTES') ?? 5);
 
 type SyncJob = {
@@ -157,18 +156,12 @@ async function planTodayIfNeeded(now: Date, log: string[]) {
   log.push(`Planned ${jobs.length} jobs for ${todayFixtures.length} fixtures on ${ukDate}`);
 }
 
-function capForProvider(provider: string): number {
-  if (provider === 'espn') return ESPN_DAILY_SYNC_CAP;
-  if (provider === 'api-football') return API_FOOTBALL_DAILY_SYNC_CAP;
-  return Number.POSITIVE_INFINITY;
-}
-
-async function providerJobsDoneToday(ukDate: string, provider: string): Promise<number> {
+async function espnJobsDoneToday(ukDate: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from('sync_schedule_jobs')
     .select('id', { count: 'exact', head: true })
     .eq('uk_date', ukDate)
-    .eq('provider', provider)
+    .eq('provider', 'espn')
     .eq('status', 'done');
   if (error) throw error;
   return count ?? 0;
@@ -207,7 +200,7 @@ function numberFromCounts(counts: Record<string, unknown>, key: string): number 
 }
 
 async function applyClockFallback(job: SyncJob, payload: Record<string, unknown>, log: string[]) {
-  if (!['espn', 'api-football'].includes(job.provider) || !job.fixture_id) return;
+  if (job.provider !== 'espn' || !job.fixture_id) return;
 
   const counts = dataCountsFromPayload(payload);
   if (numberFromCounts(counts, 'fixtureUpdates') > 0) return;
@@ -426,12 +419,19 @@ async function runDueJobs(now: Date, log: string[]) {
   }
 
   for (const job of jobs) {
-    const providerCap = capForProvider(job.provider);
-    const providerDone = Number.isFinite(providerCap)
-      ? await providerJobsDoneToday(job.uk_date, job.provider)
-      : 0;
-    if (providerDone >= providerCap) {
-      log.push(`Daily ${job.provider} cap reached for ${job.uk_date}: ${providerDone}/${providerCap}`);
+    if (job.provider !== 'espn') {
+      await markJob(job.id, {
+        status: 'skipped',
+        executed_at: new Date().toISOString(),
+        last_error: `Unsupported scheduled provider: ${job.provider}`,
+      });
+      log.push(`Skipped ${job.kind}: unsupported scheduled provider ${job.provider}`);
+      continue;
+    }
+
+    const providerDone = await espnJobsDoneToday(job.uk_date);
+    if (providerDone >= ESPN_DAILY_SYNC_CAP) {
+      log.push(`Daily ESPN cap reached for ${job.uk_date}: ${providerDone}/${ESPN_DAILY_SYNC_CAP}`);
       break;
     }
 
@@ -442,23 +442,15 @@ async function runDueJobs(now: Date, log: string[]) {
         continue;
       }
 
-      const requestBody = job.provider === 'openfootball'
-        ? { reason: job.kind }
-        : {
-          reason: job.kind,
-          fixtureId: job.fixture_id,
-          skipSquads: true,
-          maxEvents: job.provider === 'espn' ? 1 : 4,
-        };
+      const requestBody = {
+        reason: job.kind,
+        fixtureId: job.fixture_id,
+        maxEvents: 1,
+      };
       const runLogId = await createRunLog(job, requestBody);
 
       try {
-        const functionName = job.provider === 'openfootball'
-          ? 'sync-openfootball'
-          : job.provider === 'espn'
-            ? 'sync-espn'
-            : 'sync-api-football';
-        const result = await invokeFunction(functionName, requestBody);
+        const result = await invokeFunction('sync-espn', requestBody);
         await applyClockFallback(job, result.payload, log);
 
         await finishRunLog(runLogId, {
