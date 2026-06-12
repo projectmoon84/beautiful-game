@@ -44,11 +44,6 @@ body {
    width/height/top/left/margin are forbidden on animated elements. */
 
 /* ─── Match reveal animations ─── */
-@keyframes ring-in {
-  0%   { transform: scale(0); opacity: 0; }
-  50%  { opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
 
 @keyframes score-pop {
   0%   { transform: translateY(14px) scale(0.75); opacity: 0; }

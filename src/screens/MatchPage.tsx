@@ -261,9 +261,6 @@ function MatchPageContent({
         ‹
       </button>
 
-      {/* Pitch rings — outside the section so they're never clipped */}
-      <PitchRings reveal={ringsVisible} />
-
       {/* Single unified centre line spanning the full page height */}
       <div
         className="pointer-events-none absolute left-1/2 top-0 z-10 w-px -translate-x-px"
@@ -275,8 +272,11 @@ function MatchPageContent({
         }}
       />
 
+      {/* ── Score hero + events — rings clipped to this area ─────────────────── */}
+      <div className="relative overflow-hidden">
+        <PitchRings reveal={ringsVisible} />
+
       {/* ── Score hero ────────────────────────────────────────────────────────── */}
-      {/* No overflow-hidden here — rings bleed through intentionally */}
       <section
         className="relative w-full shrink-0"
         style={{ height: SECTION_H, background: '#000' }}
@@ -397,6 +397,8 @@ function MatchPageContent({
         </div>
       </div>
 
+      </div>{/* end rings-clipped wrapper */}
+
       <GroupTable
         label={`Group ${fixture.groupId}`}
         rows={rows}
@@ -424,49 +426,92 @@ function MatchPageContent({
 
 // ─── Pitch rings ──────────────────────────────────────────────────────────────
 // Positioned relative to the outer page div so they're never clipped.
-// The 896×896 container at top:−342px centres at y=106px = CENTRE_SPOT_Y.
+// The SVG pattern is scaled so its centre circle sits around the score group.
+// Its centre remains pinned to y=106px = CENTRE_SPOT_Y.
 
-const RINGS = [
-  { size: 121.68, border: 1,     opacity: 1   },
-  { size: 232.3,  border: 55.31, opacity: 0.1 },
-  { size: 453.53, border: 55.31, opacity: 0.1 },
-  { size: 674.77, border: 55.31, opacity: 0.1 },
-  { size: 896,    border: 55.31, opacity: 0.1 },
+const RINGS_SIZE = 2920;
+const RINGS_VIEWBOX = 5020;
+const RINGS_CENTRE = 2510;
+
+// Viewport scale: 2920/5020 ≈ 0.582 screen px per SVG unit.
+// vectorEffect="non-scaling-stroke" → strokeWidth is always in screen pixels.
+//
+// Thin circle: r=70px screen → 120 SVG.
+// Bands: 60px wide (screen), 0px gap, alternating white 10% / black 8%.
+// 10 bands each colour = 20 bands total.
+// band-centre-svg = (70 + 30 + band_index * 60) / 0.582
+const RING_DATA: { r: number; color: string; strokeWidth: number; opacity: number }[] = [
+  { r: 120,  color: 'white', strokeWidth: 1.5, opacity: 0.80 },  // thin centre circle
+  { r: 172,  color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band  1  ( 70–130px)
+  { r: 275,  color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band  2  (130–190px)
+  { r: 378,  color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band  3  (190–250px)
+  { r: 481,  color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band  4  (250–310px)
+  { r: 584,  color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band  5  (310–370px)
+  { r: 687,  color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band  6  (370–430px)
+  { r: 790,  color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band  7  (430–490px)
+  { r: 894,  color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band  8  (490–550px)
+  { r: 997,  color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band  9  (550–610px)
+  { r: 1100, color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band 10  (610–670px)
+  { r: 1203, color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band 11  (670–730px)
+  { r: 1306, color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band 12  (730–790px)
+  { r: 1409, color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band 13  (790–850px)
+  { r: 1512, color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band 14  (850–910px)
+  { r: 1615, color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band 15  (910–970px)
+  { r: 1718, color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band 16  (970–1030px)
+  { r: 1821, color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band 17  (1030–1090px)
+  { r: 1925, color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band 18  (1090–1150px)
+  { r: 2028, color: 'white', strokeWidth: 60,  opacity: 0.10 },  // band 19  (1150–1210px)
+  { r: 2131, color: 'black', strokeWidth: 60,  opacity: 0.08 },  // band 20  (1210–1270px)
 ];
 
 function PitchRings({ reveal }: { reveal: boolean }) {
   return (
     <div
-      className="pointer-events-none absolute left-1/2 z-10 h-[896px] w-[896px] -translate-x-1/2"
-      style={{ top: -342 }}
+      className="pointer-events-none absolute left-1/2 z-10"
+      style={{
+        top: CENTRE_SPOT_Y - RINGS_SIZE / 2,
+        width: RINGS_SIZE,
+        height: RINGS_SIZE,
+        transform: 'translateX(-50%)',
+        // Radial reveal: a growing circle clip expanding from the centre spot.
+        // 75% ≈ 2190px radius — comfortably covers all 20 bands.
+        clipPath: reveal ? 'circle(75% at 50% 50%)' : 'circle(0% at 50% 50%)',
+        transition: reveal ? 'clip-path 900ms cubic-bezier(0.4,0,0.2,1)' : 'none',
+      }}
       aria-hidden="true"
     >
-      {RINGS.map((ring, i) => (
-        <div
-          key={ring.size}
-          className="absolute rounded-full"
+      <svg
+        width={RINGS_SIZE}
+        height={RINGS_SIZE}
+        viewBox={`0 0 ${RINGS_VIEWBOX} ${RINGS_VIEWBOX}`}
+        fill="none"
+        className="h-full w-full"
+      >
+        {RING_DATA.map((ring) => (
+          <circle
+            key={ring.r}
+            cx={RINGS_CENTRE}
+            cy={RINGS_CENTRE}
+            r={ring.r}
+            stroke={ring.color}
+            strokeOpacity={ring.opacity}
+            strokeWidth={ring.strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {/* Centre dot */}
+        <circle
+          cx={RINGS_CENTRE}
+          cy={RINGS_CENTRE}
+          r="10"
+          fill="white"
+          fillOpacity="0.9"
           style={{
-            width: ring.size,
-            height: ring.size,
-            left: (896 - ring.size) / 2,
-            top:  (896 - ring.size) / 2,
-            border: `${ring.border}px solid rgba(255,255,255,${ring.opacity})`,
-            transform: reveal ? undefined : 'scale(0)',
-            animation: reveal
-              ? `ring-in 620ms cubic-bezier(0.16,1,0.3,1) ${i * 80}ms both`
-              : undefined,
+            opacity: reveal ? 1 : 0,
+            transition: 'opacity 180ms 200ms ease-out',
           }}
         />
-      ))}
-
-      {/* Centre dot */}
-      <div
-        className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-white"
-        style={{
-          opacity: reveal ? 1 : 0,
-          transition: 'opacity 200ms 180ms ease-out',
-        }}
-      />
+      </svg>
     </div>
   );
 }
@@ -616,8 +661,8 @@ function TimelineEvent({
             <div className="min-w-0 text-right" style={{ color }}>
               <div className="text-[13px] font-semibold leading-[17px]">{playerName}</div>
               {assistName && (
-                <div className="text-[11px] font-medium leading-[15px]" style={{ opacity: 0.65 }}>
-                  ↳ {assistName}
+                <div className="text-[13px] font-normal leading-[17px]" style={{ opacity: 0.65 }}>
+                  {assistName}
                 </div>
               )}
             </div>
@@ -639,8 +684,8 @@ function TimelineEvent({
             <div className="min-w-0" style={{ color }}>
               <div className="text-[13px] font-semibold leading-[17px]">{playerName}</div>
               {assistName && (
-                <div className="text-[11px] font-medium leading-[15px]" style={{ opacity: 0.65 }}>
-                  ↳ {assistName}
+                <div className="text-[13px] font-normal leading-[17px]" style={{ opacity: 0.65 }}>
+                  {assistName}
                 </div>
               )}
             </div>
