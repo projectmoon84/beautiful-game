@@ -68,7 +68,15 @@ type MatchEventRow = {
   team_id: string;
   player_id: string;
   assist_player_id: string | null;
+  player?: { name: string | null } | null;
+  assist_player?: { name: string | null } | null;
 };
+
+const MATCH_EVENT_SELECT = `
+  *,
+  player:players!match_events_player_id_fkey(name),
+  assist_player:players!match_events_assist_player_id_fkey(name)
+`;
 
 function mapFixtureRow(row: FixtureRow): Fixture {
   return {
@@ -106,6 +114,8 @@ function mapEventRow(row: MatchEventRow): MatchEvent {
     teamId:          row.team_id,
     playerId:        row.player_id,
     assistPlayerId:  row.assist_player_id ?? undefined,
+    playerName:      row.player?.name ?? undefined,
+    assistPlayerName: row.assist_player?.name ?? undefined,
   };
 }
 
@@ -144,7 +154,7 @@ async function loadFromSupabase(): Promise<void> {
     supabase.from('teams').select('*'),
     supabase.from('players').select('*'),
     supabase.from('fixtures').select('*').order('kickoff_utc'),
-    supabase.from('match_events').select('*').order('minute'),
+    supabase.from('match_events').select(MATCH_EVENT_SELECT).order('minute'),
     supabase.from('insights').select('*').eq('is_published', true),
     supabase.from('standings').select('*'),
     supabase.from('player_stats').select('*'),
@@ -279,7 +289,7 @@ async function loadFromSupabase(): Promise<void> {
 
   if (eventsData) {
     const visibleFixtureIds = new Set(fixtureCache.map(f => f.id));
-    eventCache = eventsData
+    eventCache = (eventsData as unknown as MatchEventRow[])
       .filter(row => visibleFixtureIds.has(row.fixture_id))
       .map(mapEventRow);
   }
@@ -385,7 +395,7 @@ export const dataService = {
 
     const [{ data: fixtureData, error: fixtureError }, { data: eventsData, error: eventsError }] = await Promise.all([
       supabase.from('fixtures').select('*').eq('id', fixtureId).maybeSingle(),
-      supabase.from('match_events').select('*').eq('fixture_id', fixtureId).order('minute'),
+      supabase.from('match_events').select(MATCH_EVENT_SELECT).eq('fixture_id', fixtureId).order('minute'),
     ]);
 
     if (fixtureError || eventsError || !fixtureData) {
@@ -397,7 +407,7 @@ export const dataService = {
     fixtureCache = fixtureCache.map(fixture => fixture.id === fixtureId ? refreshedFixture : fixture);
     if (refreshedFixture.groupId) standingsCache.delete(refreshedFixture.groupId);
 
-    const refreshedEvents = (eventsData ?? []).map(mapEventRow);
+    const refreshedEvents = ((eventsData ?? []) as unknown as MatchEventRow[]).map(mapEventRow);
     eventCache = [
       ...eventCache.filter(event => event.fixtureId !== fixtureId),
       ...refreshedEvents,

@@ -70,6 +70,8 @@ export interface MatchEvent {
   teamId: string;
   playerId: string;
   assistPlayerId?: string;
+  playerName?: string;
+  assistPlayerName?: string;
 }
 
 // ── Derived/computed types ────────────────────────────────────────

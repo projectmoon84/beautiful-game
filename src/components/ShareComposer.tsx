@@ -424,6 +424,8 @@ function SharePitch({
           const isHome = item.event.teamId === home.id;
           const player = dataService.player(item.event.playerId);
           const assist = item.event.assistPlayerId ? dataService.player(item.event.assistPlayerId) : undefined;
+          const playerName = player?.name ?? item.event.playerName ?? 'Unknown';
+          const assistName = assist?.name ?? item.event.assistPlayerName;
 
           return (
             <div
@@ -436,13 +438,13 @@ function SharePitch({
               </div>
               {isHome ? (
                 <div className="absolute right-[172px] top-1.5 flex items-start justify-end gap-4">
-                  <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={home.secondaryHex} align="right" />
+                  <ShareEventNames player={playerName} assist={assistName} color={home.secondaryHex} align="right" />
                   <ShareEventIcon type={item.event.type} />
                 </div>
               ) : (
                 <div className="absolute left-[172px] top-1.5 flex items-start justify-start gap-4">
                   <ShareEventIcon type={item.event.type} />
-                  <ShareEventNames player={player?.name ?? 'Unknown'} assist={assist?.name} color={away.secondaryHex} align="left" />
+                  <ShareEventNames player={playerName} assist={assistName} color={away.secondaryHex} align="left" />
                 </div>
               )}
             </div>

@@ -268,6 +268,21 @@ function playerName(athlete: EspnAthlete | null): string | null {
   return athlete?.displayName ?? athlete?.fullName ?? athlete?.shortName ?? null;
 }
 
+function assistNameFromText(text: string | undefined): string | null {
+  const match = text?.match(/\bAssisted by\s+(.+?)(?:\s+with\b|\.|$)/i);
+  return match?.[1]?.trim() || null;
+}
+
+function playerIdPart(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48) || 'unknown';
+}
+
 function playerPosition(position: string | undefined): 'GK' | 'DEF' | 'MID' | 'FWD' {
   const value = (position ?? '').toUpperCase();
   if (value.includes('GK') || value.includes('GOAL')) return 'GK';
@@ -517,10 +532,10 @@ Deno.serve(async (request) => {
         const assistAthlete = isGoalEvent
           ? (detail.participants?.[1]?.athlete ?? detail.athletesInvolved?.[1] ?? null)
           : null;
-        const assistName = playerName(assistAthlete);
+        const assistName = playerName(assistAthlete) ?? (isGoalEvent ? assistNameFromText(detail.text) : null);
         let assistPlayerId: string | null = null;
-        if (assistAthlete?.id && assistName) {
-          assistPlayerId = `${teamCode}-ESPN-${assistAthlete.id}`;
+        if (assistName) {
+          assistPlayerId = `${teamCode}-ESPN-${assistAthlete?.id ?? `assist-${playerIdPart(assistName)}`}`;
           playerRows.push({
             id: assistPlayerId,
             team_id: teamCode,

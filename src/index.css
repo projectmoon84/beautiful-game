@@ -42,3 +42,49 @@ body {
 /* ─── Animation budget rule: transforms + opacity only ─── */
 /* Anything that must animate should only use transform and opacity.
    width/height/top/left/margin are forbidden on animated elements. */
+
+/* ─── Match reveal animations ─── */
+@keyframes ring-in {
+  0%   { transform: scale(0); opacity: 0; }
+  50%  { opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes score-pop {
+  0%   { transform: translateY(14px) scale(0.75); opacity: 0; }
+  55%  { transform: translateY(-4px) scale(1.06); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes ui-in {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes event-in-left {
+  0%   { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes event-in-right {
+  0%   { opacity: 0; transform: translateX(-16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes event-row-in {
+  0%   { opacity: 0; transform: translateY(-22px) scale(0.95); }
+  35%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes confetti-fly {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); opacity: 1; }
+  70%  { opacity: 1; }
+  100% {
+    transform: translate(
+      calc(var(--dx) - 50%),
+      calc(var(--dy) - 50%)
+    ) rotate(var(--rot));
+    opacity: 0;
+  }
+}
