@@ -116,6 +116,24 @@ function ukDateFromIso(iso: string): string {
   return DATE_FORMATTER.format(new Date(iso));
 }
 
+function ymdUtc(date: Date): string {
+  return date.toISOString().slice(0, 10).replaceAll('-', '');
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function hasEspnMatch(events: EspnEvent[], homeCode: string, awayCode: string): boolean {
+  return events.some(event => {
+    const competitors = event.competitions?.[0]?.competitors ?? [];
+    const home = competitors.find(competitor => competitor.homeAway === 'home');
+    const away = competitors.find(competitor => competitor.homeAway === 'away');
+    return home?.team?.abbreviation?.toUpperCase() === homeCode
+      && away?.team?.abbreviation?.toUpperCase() === awayCode;
+  });
+}
+
 function scoreNumber(score: string | undefined): number | null {
   if (score === undefined || score === '') return null;
   const parsed = Number(score);
@@ -277,6 +295,15 @@ Deno.serve(async (request) => {
     const targetFixture = targetFixtureId
       ? fixtureRows.find(fixture => fixture.id === targetFixtureId)
       : null;
+    const dbByCodePair = new Map<string, DbFixture>();
+    for (const fixture of fixtureRows) {
+      if (!fixture.home_team_id || !fixture.away_team_id) continue;
+      dbByCodePair.set(`${fixture.home_team_id}_${fixture.away_team_id}`, fixture);
+    }
+    const targetPair = targetFixture?.home_team_id && targetFixture?.away_team_id
+      ? { home: targetFixture.home_team_id, away: targetFixture.away_team_id }
+      : null;
+
     // In backfill mode, collect all distinct dates that have finished or live fixtures.
     // Otherwise use the explicitly supplied date, the target fixture's date, or today.
     let datesToFetch: string[];
@@ -284,15 +311,27 @@ Deno.serve(async (request) => {
       const uniqueDates = new Set<string>();
       for (const fixture of fixtureRows) {
         if (fixture.status === 'finished' || fixture.status === 'live') {
+          const kickoff = new Date(fixture.kickoff_utc);
           uniqueDates.add(ukDateFromIso(fixture.kickoff_utc).replaceAll('-', ''));
+          uniqueDates.add(ymdUtc(kickoff));
+          uniqueDates.add(ymdUtc(addDays(kickoff, -1)));
         }
       }
       datesToFetch = [...uniqueDates].sort();
       log.push(`Backfill mode: ${datesToFetch.length} date(s) to process: ${datesToFetch.join(', ')}`);
     } else {
-      const date = body.dates
-        ?? (targetFixture?.kickoff_utc ? ukDateFromIso(targetFixture.kickoff_utc).replaceAll('-', '') : ukDateFromIso(syncedAt).replaceAll('-', ''));
-      datesToFetch = [date];
+      const candidates: string[] = [];
+      if (body.dates) candidates.push(body.dates);
+      if (targetFixture?.kickoff_utc) {
+        const kickoff = new Date(targetFixture.kickoff_utc);
+        candidates.push(ukDateFromIso(targetFixture.kickoff_utc).replaceAll('-', ''));
+        candidates.push(ymdUtc(kickoff));
+        candidates.push(ymdUtc(addDays(kickoff, -1)));
+        candidates.push(ymdUtc(addDays(kickoff, 1)));
+      } else {
+        candidates.push(ukDateFromIso(syncedAt).replaceAll('-', ''));
+      }
+      datesToFetch = [...new Set(candidates)];
     }
 
     const events: EspnEvent[] = [];
@@ -303,12 +342,10 @@ Deno.serve(async (request) => {
       const dateEvents = scoreboard.events ?? [];
       log.push(`ESPN req ${apiRequests}: scoreboard ${date} -> ${dateEvents.length} events`);
       events.push(...dateEvents);
-    }
-
-    const dbByCodePair = new Map<string, DbFixture>();
-    for (const fixture of fixtureRows) {
-      if (!fixture.home_team_id || !fixture.away_team_id) continue;
-      dbByCodePair.set(`${fixture.home_team_id}_${fixture.away_team_id}`, fixture);
+      if (targetPair && hasEspnMatch(dateEvents, targetPair.home, targetPair.away)) {
+        log.push(`Matched target fixture on ESPN date ${date}`);
+        break;
+      }
     }
 
     const espnByFixtureId = new Map<string, { event: EspnEvent; teamIdToCode: Map<string, string> }>();
@@ -369,20 +406,6 @@ Deno.serve(async (request) => {
       log.push(`Updated ${fixtureUpdates} fixture statuses/scores`);
     } else {
       log.push('No matching ESPN fixtures to update');
-    }
-
-    // When maxEvents=0 the caller only wants score/status updates — leave existing events intact.
-    if (maxEvents === 0) {
-      log.push('maxEvents=0: skipping event processing, existing events preserved');
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          reqCount: apiRequests,
-          counts: { apiRequests, scoreboardEvents: events.length, fixtureUpdates, eventFetches: 0, eventsInserted: 0, possibleEvents: 0, mappableEvents: 0 },
-          log,
-        }),
-        { headers: { 'Content-Type': 'application/json' } },
-      );
     }
 
     const eventQueue = [...espnByFixtureId.entries()]
