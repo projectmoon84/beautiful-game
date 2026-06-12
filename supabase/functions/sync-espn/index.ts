@@ -13,6 +13,8 @@ const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.wor
 const SOURCE = 'espn';
 const MAX_EVENT_FETCHES = 4;
 const MAX_EVENT_FETCHES_BACKFILL = 64;
+const ESPN_DATE_WINDOW_DAYS = [-1, 0, 1];
+const MATCH_KICKOFF_TOLERANCE_MS = 36 * 60 * 60 * 1000;
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/London',
   year: 'numeric',
@@ -124,6 +126,23 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+function dateAtUtcMidday(date: string): Date {
+  return new Date(`${date}T12:00:00.000Z`);
+}
+
+function espnDateCandidatesForIso(iso: string): string[] {
+  const utcDate = new Date(iso);
+  const ukDate = ukDateFromIso(iso);
+  const dates = new Set<string>();
+
+  for (const offset of ESPN_DATE_WINDOW_DAYS) {
+    dates.add(ymdUtc(addDays(utcDate, offset)));
+    dates.add(ymdUtc(addDays(dateAtUtcMidday(ukDate), offset)));
+  }
+
+  return [...dates].sort();
+}
+
 function hasEspnMatch(events: EspnEvent[], homeCode: string, awayCode: string): boolean {
   return events.some(event => {
     const competitors = event.competitions?.[0]?.competitors ?? [];
@@ -132,6 +151,32 @@ function hasEspnMatch(events: EspnEvent[], homeCode: string, awayCode: string): 
     return home?.team?.abbreviation?.toUpperCase() === homeCode
       && away?.team?.abbreviation?.toUpperCase() === awayCode;
   });
+}
+
+function eventKickoffMs(event: EspnEvent): number | null {
+  if (!event.date) return null;
+  const parsed = new Date(event.date).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function bestFixtureForEspnEvent(
+  fixtures: DbFixture[],
+  event: EspnEvent,
+): DbFixture | null {
+  if (fixtures.length === 0) return null;
+  if (fixtures.length === 1) return fixtures[0];
+
+  const espnKickoffMs = eventKickoffMs(event);
+  if (espnKickoffMs === null) return null;
+
+  const ranked = fixtures
+    .map(fixture => ({
+      fixture,
+      diff: Math.abs(new Date(fixture.kickoff_utc).getTime() - espnKickoffMs),
+    }))
+    .sort((a, b) => a.diff - b.diff);
+
+  return ranked[0]?.diff <= MATCH_KICKOFF_TOLERANCE_MS ? ranked[0].fixture : null;
 }
 
 function scoreNumber(score: string | undefined): number | null {
@@ -295,10 +340,11 @@ Deno.serve(async (request) => {
     const targetFixture = targetFixtureId
       ? fixtureRows.find(fixture => fixture.id === targetFixtureId)
       : null;
-    const dbByCodePair = new Map<string, DbFixture>();
+    const dbByCodePair = new Map<string, DbFixture[]>();
     for (const fixture of fixtureRows) {
       if (!fixture.home_team_id || !fixture.away_team_id) continue;
-      dbByCodePair.set(`${fixture.home_team_id}_${fixture.away_team_id}`, fixture);
+      const key = `${fixture.home_team_id}_${fixture.away_team_id}`;
+      dbByCodePair.set(key, [...(dbByCodePair.get(key) ?? []), fixture]);
     }
     const targetPair = targetFixture?.home_team_id && targetFixture?.away_team_id
       ? { home: targetFixture.home_team_id, away: targetFixture.away_team_id }
@@ -311,10 +357,9 @@ Deno.serve(async (request) => {
       const uniqueDates = new Set<string>();
       for (const fixture of fixtureRows) {
         if (fixture.status === 'finished' || fixture.status === 'live') {
-          const kickoff = new Date(fixture.kickoff_utc);
-          uniqueDates.add(ukDateFromIso(fixture.kickoff_utc).replaceAll('-', ''));
-          uniqueDates.add(ymdUtc(kickoff));
-          uniqueDates.add(ymdUtc(addDays(kickoff, -1)));
+          for (const date of espnDateCandidatesForIso(fixture.kickoff_utc)) {
+            uniqueDates.add(date);
+          }
         }
       }
       datesToFetch = [...uniqueDates].sort();
@@ -323,30 +368,29 @@ Deno.serve(async (request) => {
       const candidates: string[] = [];
       if (body.dates) candidates.push(body.dates);
       if (targetFixture?.kickoff_utc) {
-        const kickoff = new Date(targetFixture.kickoff_utc);
-        candidates.push(ukDateFromIso(targetFixture.kickoff_utc).replaceAll('-', ''));
-        candidates.push(ymdUtc(kickoff));
-        candidates.push(ymdUtc(addDays(kickoff, -1)));
-        candidates.push(ymdUtc(addDays(kickoff, 1)));
+        candidates.push(...espnDateCandidatesForIso(targetFixture.kickoff_utc));
       } else {
-        candidates.push(ukDateFromIso(syncedAt).replaceAll('-', ''));
+        candidates.push(...espnDateCandidatesForIso(syncedAt));
       }
       datesToFetch = [...new Set(candidates)];
     }
 
-    const events: EspnEvent[] = [];
+    const eventsById = new Map<string, EspnEvent>();
     for (const date of datesToFetch) {
       const scoreboardUrl = `${ESPN_BASE}/scoreboard?dates=${date}&limit=100`;
       const scoreboard = await fetchJson<EspnScoreboard>(scoreboardUrl);
       apiRequests++;
       const dateEvents = scoreboard.events ?? [];
       log.push(`ESPN req ${apiRequests}: scoreboard ${date} -> ${dateEvents.length} events`);
-      events.push(...dateEvents);
+      for (const event of dateEvents) {
+        eventsById.set(event.id, event);
+      }
       if (targetPair && hasEspnMatch(dateEvents, targetPair.home, targetPair.away)) {
         log.push(`Matched target fixture on ESPN date ${date}`);
         break;
       }
     }
+    const events = [...eventsById.values()];
 
     const espnByFixtureId = new Map<string, { event: EspnEvent; teamIdToCode: Map<string, string> }>();
     const updates: Array<{
@@ -371,7 +415,7 @@ Deno.serve(async (request) => {
       if (home?.team?.id) teamIdToCode.set(String(home.team.id), homeCode);
       if (away?.team?.id) teamIdToCode.set(String(away.team.id), awayCode);
 
-      const dbFixture = dbByCodePair.get(`${homeCode}_${awayCode}`);
+      const dbFixture = bestFixtureForEspnEvent(dbByCodePair.get(`${homeCode}_${awayCode}`) ?? [], event);
       if (!dbFixture || dbFixture.edited_by_admin) continue;
       if (targetFixtureId && dbFixture.id !== targetFixtureId) continue;
 
