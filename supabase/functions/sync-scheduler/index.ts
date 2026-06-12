@@ -213,15 +213,16 @@ async function applyClockFallback(job: SyncJob, payload: Record<string, unknown>
 
   const { data: fixture, error } = await supabaseAdmin
     .from('fixtures')
-    .select('id, kickoff_utc, status, home_score, away_score, edited_by_admin')
+    .select('id, kickoff_utc, status, home_score, away_score, source, edited_by_admin')
     .eq('id', job.fixture_id)
     .maybeSingle();
   if (error) throw error;
   if (!fixture || fixture.edited_by_admin || fixture.status === 'finished') return;
+  if (fixture.source === 'espn') return;
 
   const kickoffMs = new Date(fixture.kickoff_utc).getTime();
   const elapsedMinutes = Math.floor((Date.now() - kickoffMs) / 60_000);
-  if (elapsedMinutes < 0 || elapsedMinutes > 135) return;
+  if (elapsedMinutes < 0 || elapsedMinutes > 105) return;
 
   const { error: updateError } = await supabaseAdmin
     .from('fixtures')

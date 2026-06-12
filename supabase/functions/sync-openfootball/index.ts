@@ -237,13 +237,21 @@ Deno.serve(async () => {
     // Load current fixture states so we never downgrade a live/finished match back to scheduled.
     const { data: activeFixtures } = await supabaseAdmin
       .from('fixtures')
-      .select('id, status, home_score, away_score')
+      .select('id, status, minute, home_score, away_score, source, updated_at')
       .in('status', ['live', 'finished']);
 
     const lockedTeamIds = new Set((lockedTeams ?? []).map((row: { id: string }) => row.id));
     const lockedFixtureIds = new Set((lockedFixtures ?? []).map((row: { id: string }) => row.id));
     const lockedPlayerIds = new Set((lockedPlayers ?? []).map((row: { id: string }) => row.id));
-    type ActiveFixture = { id: string; status: string; home_score: number | null; away_score: number | null };
+    type ActiveFixture = {
+      id: string;
+      status: string;
+      minute: number | null;
+      home_score: number | null;
+      away_score: number | null;
+      source: string | null;
+      updated_at: string;
+    };
     const activeFixtureMap = new Map<string, ActiveFixture>(
       (activeFixtures ?? []).map((row: ActiveFixture) => [row.id, row]),
     );
@@ -385,10 +393,10 @@ Deno.serve(async () => {
         group_id: stage === 'group' ? fixtureGroupId : null,
         kickoff_utc: toIsoDate(match.date, match.time),
         stage,
-        minute: null,
+        minute: active ? active.minute : null,
         man_of_match_player_id: null,
-        source: SOURCE,
-        updated_at: syncedAt,
+        source: active?.source ?? SOURCE,
+        updated_at: active?.updated_at ?? syncedAt,
         ...result,
       });
     }
