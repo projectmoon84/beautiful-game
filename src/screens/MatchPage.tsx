@@ -78,7 +78,7 @@ export default function MatchPage() {
       </button>
 
       {/* Score header — pitch visuals + team codes + scores */}
-      <section className="relative w-full">
+      <section className="relative w-full overflow-hidden">
         <div className="absolute inset-0 z-0 flex">
           <div className="flex-1" style={{ background: home.primaryHex }} />
           <div className="flex-1" style={{ background: away.primaryHex }} />
