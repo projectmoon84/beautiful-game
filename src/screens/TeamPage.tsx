@@ -98,16 +98,8 @@ export default function TeamPage() {
         {/* ── Header ── */}
         <div className="flex flex-col items-start gap-2 px-4 pb-10 pt-14">
           <div className="flex w-full flex-col items-start justify-center">
-            <div className="flex h-14 w-full items-end gap-2 overflow-hidden pt-1">
-              <h1
-                className="flex min-w-0 flex-1 flex-col justify-end text-[64px] font-bold uppercase leading-[0.82]"
-                style={{
-                  color: ink,
-                  fontFamily: '"Instrument Sans", system-ui, sans-serif',
-                }}
-              >
-                {team.name}
-              </h1>
+            <div className="flex w-full items-end gap-2 pt-1">
+              <TeamTitle name={team.name} color={ink} />
             </div>
 
             <div className="flex w-full flex-col items-center gap-0.5 pt-6">
@@ -199,6 +191,30 @@ export default function TeamPage() {
 
       </div>
     </div>
+  );
+}
+
+function TeamTitle({ name, color }: { name: string; color: string }) {
+  const longestWordLength = Math.max(
+    ...name
+      .split(/\s+/)
+      .map(word => word.replace(/[^A-Za-z0-9]/g, '').length),
+    1,
+  );
+  const mobileFitSize = `calc((100vw - 32px) / ${Math.max(1, longestWordLength * 0.68)})`;
+
+  return (
+    <h1
+      className="min-w-0 flex-1 whitespace-normal break-normal font-bold uppercase leading-[0.9]"
+      style={{
+        color,
+        fontFamily: '"Instrument Sans", system-ui, sans-serif',
+        fontSize: `clamp(24px, min(64px, ${mobileFitSize}), 64px)`,
+        overflowWrap: 'normal',
+      }}
+    >
+      {name}
+    </h1>
   );
 }
 
