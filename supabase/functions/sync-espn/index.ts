@@ -15,6 +15,8 @@ const MAX_EVENT_FETCHES = 4;
 const MAX_EVENT_FETCHES_BACKFILL = 64;
 const ESPN_DATE_WINDOW_DAYS = [-1, 0, 1];
 const MATCH_KICKOFF_TOLERANCE_MS = 36 * 60 * 60 * 1000;
+const GROUP_STALE_LIVE_FINISH_AFTER_MINUTES = 125;
+const KNOCKOUT_STALE_LIVE_FINISH_AFTER_MINUTES = 170;
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/London',
   year: 'numeric',
@@ -35,6 +37,7 @@ type DbFixture = {
   home_team_id: string | null;
   away_team_id: string | null;
   kickoff_utc: string;
+  stage: string;
   status: string;
   edited_by_admin: boolean;
 };
@@ -215,6 +218,30 @@ function minuteFromStatus(status: EspnStatus | undefined, mappedStatus: string):
   return null;
 }
 
+function normalizeStaleLiveStatus(
+  fixture: DbFixture,
+  mappedStatus: 'scheduled' | 'live' | 'finished',
+  minute: number | null,
+  homeScore: number | null,
+  awayScore: number | null,
+  syncedAt: string,
+): 'scheduled' | 'live' | 'finished' {
+  if (mappedStatus !== 'live' || minute === null || minute < 90 || homeScore === null || awayScore === null) {
+    return mappedStatus;
+  }
+
+  const kickoffMs = new Date(fixture.kickoff_utc).getTime();
+  const syncedMs = new Date(syncedAt).getTime();
+  if (!Number.isFinite(kickoffMs) || !Number.isFinite(syncedMs)) return mappedStatus;
+
+  const elapsedMinutes = Math.floor((syncedMs - kickoffMs) / 60_000);
+  const finishAfterMinutes = fixture.stage === 'group'
+    ? GROUP_STALE_LIVE_FINISH_AFTER_MINUTES
+    : KNOCKOUT_STALE_LIVE_FINISH_AFTER_MINUTES;
+
+  return elapsedMinutes >= finishAfterMinutes ? 'finished' : mappedStatus;
+}
+
 function eventMinute(detail: EspnDetail): number | null {
   const candidates = [
     detail.clock?.displayValue,
@@ -346,7 +373,7 @@ Deno.serve(async (request) => {
 
     const { data: dbFixtures, error: fixturesError } = await supabaseAdmin
       .from('fixtures')
-      .select('id, home_team_id, away_team_id, kickoff_utc, status, edited_by_admin')
+      .select('id, home_team_id, away_team_id, kickoff_utc, stage, status, edited_by_admin')
       .not('home_team_id', 'is', null)
       .not('away_team_id', 'is', null);
     if (fixturesError) throw fixturesError;
@@ -436,17 +463,28 @@ Deno.serve(async (request) => {
 
       const status = competition?.status ?? event.status;
       const mappedStatus = mapStatus(status);
+      const minute = minuteFromStatus(status, mappedStatus);
+      const homeScore = scoreNumber(home?.score);
+      const awayScore = scoreNumber(away?.score);
+      const normalizedStatus = normalizeStaleLiveStatus(
+        dbFixture,
+        mappedStatus,
+        minute,
+        homeScore,
+        awayScore,
+        syncedAt,
+      );
       updates.push({
         id: dbFixture.id,
-        status: mappedStatus,
-        minute: minuteFromStatus(status, mappedStatus),
-        home_score: scoreNumber(home?.score),
-        away_score: scoreNumber(away?.score),
+        status: normalizedStatus,
+        minute: normalizedStatus === 'live' ? minute : null,
+        home_score: homeScore,
+        away_score: awayScore,
         source: SOURCE,
         updated_at: syncedAt,
       });
       log.push(
-        `ESPN update ${dbFixture.id}: ${mappedStatus} ${minuteFromStatus(status, mappedStatus) ?? '-'}' ${scoreNumber(home?.score) ?? '-'}-${scoreNumber(away?.score) ?? '-'}`,
+        `ESPN update ${dbFixture.id}: ${normalizedStatus}${normalizedStatus !== mappedStatus ? ` (normalized from ${mappedStatus})` : ''} ${minute ?? '-'}' ${homeScore ?? '-'}-${awayScore ?? '-'}`,
       );
       espnByFixtureId.set(dbFixture.id, { event, teamIdToCode });
     }

@@ -36,6 +36,7 @@ type FunctionResult = {
 type FixtureRow = {
   id: string;
   kickoff_utc: string;
+  stage: string;
   status: string;
   home_team_id: string | null;
   away_team_id: string | null;
@@ -87,7 +88,8 @@ function plannedFixtureJobs(fixture: FixtureRow, ukDate: string): PlannedJob[] {
     { kind: 'pre_t15', minutes: -15, priority: 25 },
     { kind: 'pre_t02', minutes: -2, priority: 20 },
   ];
-  const liveOffsets = Array.from({ length: 131 }, (_, minute) => ({
+  const liveJobCount = fixture.stage === 'group' ? 131 : 181;
+  const liveOffsets = Array.from({ length: liveJobCount }, (_, minute) => ({
     kind: `live_m${String(minute).padStart(3, '0')}`,
     minutes: minute,
     priority: minute === 0 ? 5 : 10,
@@ -126,7 +128,7 @@ async function planTodayIfNeeded(now: Date, log: string[]) {
 
   const { data: fixtures, error: fixtureError } = await supabaseAdmin
     .from('fixtures')
-    .select('id, kickoff_utc, status, home_team_id, away_team_id')
+    .select('id, kickoff_utc, stage, status, home_team_id, away_team_id')
     .not('home_team_id', 'is', null)
     .not('away_team_id', 'is', null)
     .order('kickoff_utc');

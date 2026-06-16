@@ -52,7 +52,7 @@ export const SINGLE_TOURNAMENT_INVOLVEMENTS: WCRankedRecord[] = [
   { rank: 4, player: 'Gerd Muller', country: 'West Germany', year: 1970, goals: 10, assists: 1, involvements: 11 },
   { rank: 5, player: 'Grzegorz Lato', country: 'Poland', year: 1974, goals: 7, assists: 2, involvements: 9 },
   { rank: 6, player: 'Kylian Mbappe', country: 'France', year: 2022, goals: 8, assists: 2, involvements: 10 },
-  { rank: 7, player: 'Ronaldo', country: 'Brazil', year: 2002, goals: 8, assists: 1, involvements: 9 },
+  { rank: 7, player: 'Ronaldo Nazario', country: 'Brazil', year: 2002, goals: 8, assists: 1, involvements: 9 },
   { rank: 8, player: 'Just Fontaine', country: 'France', year: 1958, goals: 13, assists: null, involvements: 13 },
   { rank: 9, player: 'Johan Neeskens', country: 'Netherlands', year: 1974, goals: 5, assists: 3, involvements: 8 },
   { rank: 10, player: 'Teofilo Cubillas', country: 'Peru', year: 1978, goals: 5, assists: 2, involvements: 7 },
@@ -65,7 +65,7 @@ export const SINGLE_TOURNAMENT_GOALS: WCRankedRecord[] = [
   { rank: 4, player: 'Ademir', country: 'Brazil', year: 1950, goals: 9, games: 6 },
   { rank: 4, player: 'Eusebio', country: 'Portugal', year: 1966, goals: 9, games: 6 },
   { rank: 6, player: 'Guillermo Stabile', country: 'Argentina', year: 1930, goals: 8, games: 4 },
-  { rank: 6, player: 'Ronaldo', country: 'Brazil', year: 2002, goals: 8, games: 7 },
+  { rank: 6, player: 'Ronaldo Nazario', country: 'Brazil', year: 2002, goals: 8, games: 7 },
   { rank: 6, player: 'Kylian Mbappe', country: 'France', year: 2022, goals: 8, games: 7 },
   { rank: 9, player: 'Leonidas', country: 'Brazil', year: 1938, goals: 7, games: 5 },
   { rank: 9, player: 'Jairzinho', country: 'Brazil', year: 1970, goals: 7, games: 6 },
@@ -101,7 +101,7 @@ export const ALL_TIME_INVOLVEMENTS: WCRankedRecord[] = [
   { rank: 1, player: 'Lionel Messi', country: 'Argentina', games: 26, goals: 13, assists: 8, involvements: 21 },
   { rank: 2, player: 'Pelé', country: 'Brazil', games: 14, goals: 12, assists: 9, involvements: 21 },
   { rank: 3, player: 'Gerd Muller', country: 'West Germany', games: 13, goals: 14, assists: 5, involvements: 19 },
-  { rank: 4, player: 'Ronaldo', country: 'Brazil', games: 19, goals: 15, assists: 4, involvements: 19 },
+  { rank: 4, player: 'Ronaldo Nazario', country: 'Brazil', games: 19, goals: 15, assists: 4, involvements: 19 },
   { rank: 5, player: 'Miroslav Klose', country: 'Germany', games: 24, goals: 16, assists: 3, involvements: 19 },
   { rank: 6, player: 'Thomas Muller', country: 'Germany', games: 19, goals: 10, assists: 6, involvements: 16 },
   { rank: 6, player: 'Diego Maradona', country: 'Argentina', games: 21, goals: 8, assists: 8, involvements: 16 },
@@ -113,7 +113,7 @@ export const ALL_TIME_INVOLVEMENTS: WCRankedRecord[] = [
 
 export const ALL_TIME_GOALS: WCRankedRecord[] = [
   { rank: 1, player: 'Miroslav Klose', country: 'Germany', editions: '2002-2014', worldCups: 4, goals: 16, games: 24 },
-  { rank: 2, player: 'Ronaldo', country: 'Brazil', editions: '1998-2006', worldCups: 3, goals: 15, games: 19 },
+  { rank: 2, player: 'Ronaldo Nazario', country: 'Brazil', editions: '1998-2006', worldCups: 3, goals: 15, games: 19 },
   { rank: 3, player: 'Gerd Muller', country: 'West Germany', editions: '1970-1974', worldCups: 2, goals: 14, games: 13 },
   { rank: 4, player: 'Just Fontaine', country: 'France', editions: '1958', worldCups: 1, goals: 13, games: 6 },
   { rank: 5, player: 'Lionel Messi', country: 'Argentina', editions: '2006-2022', worldCups: 5, goals: 13, games: 26 },
@@ -173,7 +173,7 @@ export const TEAM_TOURNAMENT_RECORDS: WCTeamRecord[] = [
 
 export const MESSI_RONALDO = {
   left: { id: 'messi', name: 'Messi', fullName: 'Lionel Messi', flag: '🇦🇷', hex: '#8AC5EA' },
-  right: { id: 'ronaldo', name: 'Ronaldo', fullName: 'Cristiano Ronaldo', flag: '🇵🇹', hex: '#AC192D' },
+  right: { id: 'ronaldo', name: 'Cristiano Ronaldo', fullName: 'Cristiano Ronaldo', flag: '🇵🇹', hex: '#AC192D' },
   rows: [
     { key: 'worldCups', label: 'World Cups', l: 5, r: 5 },
     { key: 'matches', label: 'Matches', l: 26, r: 22 },
