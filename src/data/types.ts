@@ -104,3 +104,39 @@ export interface InsightCard {
   value: string;
   blurb: string;
 }
+
+// ── Match lineups ─────────────────────────────────────────────────
+
+export interface LineupSlot {
+  playerId: string;
+  playerName: string;
+  shirtNumber: number;
+  position: Position;
+  isStarter: boolean;
+  subbedOffMinute?: number;
+  subbedOnMinute?: number;
+  subbedForPlayerId?: string;
+}
+
+export interface MatchLineup {
+  fixtureId: string;
+  teamId: string;
+  formation?: string;
+  players: LineupSlot[];
+}
+
+// ── Match team stats ──────────────────────────────────────────────
+
+export interface MatchTeamStats {
+  fixtureId: string;
+  teamId: string;
+  possessionPct?: number;
+  shotsOnTarget?: number;
+  shotsOffTarget?: number;
+  shotsBlocked?: number;
+  corners?: number;
+  offsides?: number;
+  fouls?: number;
+  yellowCards?: number;
+  redCards?: number;
+}

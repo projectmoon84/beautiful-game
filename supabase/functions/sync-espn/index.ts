@@ -109,12 +109,33 @@ type EspnAthlete = {
   position?: string;
 };
 
+type EspnRosterEntry = {
+  athlete?: EspnAthlete & { position?: { abbreviation?: string } };
+  jersey?: string;
+  starter?: boolean;
+  active?: boolean;
+  subbedIn?: boolean;
+  subbedOut?: boolean;
+  position?: { name?: string; abbreviation?: string };
+};
+
+type EspnRoster = {
+  team?: { id?: string; abbreviation?: string };
+  roster?: EspnRosterEntry[];
+};
+
+type EspnBoxscoreTeam = {
+  team?: { id?: string; abbreviation?: string };
+  statistics?: Array<{ name?: string; displayValue?: string; value?: number }>;
+};
+
 type EspnSummary = {
   details?: EspnDetail[];
   plays?: EspnDetail[];
   keyEvents?: EspnDetail[];
   competitions?: Array<{ details?: EspnDetail[] }>;
-  boxscore?: unknown;
+  rosters?: EspnRoster[];
+  boxscore?: { teams?: EspnBoxscoreTeam[] };
 };
 
 function ukDateFromIso(iso: string): string {
@@ -311,10 +332,15 @@ function playerIdPart(value: string): string {
 }
 
 function playerPosition(position: string | undefined): 'GK' | 'DEF' | 'MID' | 'FWD' {
-  const value = (position ?? '').toUpperCase();
-  if (value.includes('GK') || value.includes('GOAL')) return 'GK';
-  if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'DF', 'DEF'].some(token => value.includes(token))) return 'DEF';
-  if (['FW', 'FWD', 'ST', 'CF', 'LW', 'RW', 'ATT'].some(token => value.includes(token))) return 'FWD';
+  const value = (position ?? '').toUpperCase().trim();
+  // ESPN single-letter abbreviations: G, D, M, F
+  if (value === 'G') return 'GK';
+  if (value === 'D') return 'DEF';
+  if (value === 'M') return 'MID';
+  if (value === 'F') return 'FWD';
+  if (value.includes('GK') || value.includes('GOAL') || value.includes('KEEPER')) return 'GK';
+  if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'DF', 'DEF', 'BACK'].some(token => value.includes(token))) return 'DEF';
+  if (['FW', 'FWD', 'ST', 'CF', 'LW', 'RW', 'ATT', 'FORWARD', 'STRIKER'].some(token => value.includes(token))) return 'FWD';
   return 'MID';
 }
 
@@ -327,6 +353,38 @@ function eventId(fixtureId: string, detail: EspnDetail, type: string, teamCode: 
   const clock = eventMinute(detail) ?? detail.clock?.displayValue ?? detail.displayTime ?? index;
   const espnType = detail.type?.id ?? detail.type?.text ?? type;
   return `${fixtureId}-espn-${clock}-${teamCode}-${espnType}-${athleteId}`;
+}
+
+// Maps ESPN statistic.name values to match_team_stats columns.
+// Keys are lowercase trimmed ESPN names; values are DB column names.
+const STAT_NAME_MAP: Record<string, string> = {
+  'possessionpct': 'possession_pct',
+  'possession': 'possession_pct',
+  'ballpossession': 'possession_pct',
+  'possessionpercentage': 'possession_pct',
+  'shotsongoal': 'shots_on_target',
+  'shotsontarget': 'shots_on_target',
+  'shotsoffgoal': 'shots_off_target',
+  'shotsofftarget': 'shots_off_target',
+  'blockedshots': 'shots_blocked',
+  'shotsblocked': 'shots_blocked',
+  'cornerkicks': 'corners',
+  'corners': 'corners',
+  'wonCorners': 'corners',
+  'woncorners': 'corners',
+  'offsides': 'offsides',
+  'offside': 'offsides',
+  'fouls': 'fouls',
+  'foulscommitted': 'fouls',
+  'totalfoulscommitted': 'fouls',
+  'yellowcards': 'yellow_cards',
+  'redcards': 'red_cards',
+};
+
+function mapStatName(name: string | undefined): string | null {
+  if (!name) return null;
+  const key = name.toLowerCase().replace(/\s+/g, '');
+  return STAT_NAME_MAP[key] ?? null;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -565,25 +623,31 @@ Deno.serve(async (request) => {
           updated_at: syncedAt,
         });
 
-        // Assist: keyEvents puts the assist provider as participants[1]; older paths use athletesInvolved[1].
+        // For goals: participants[1] / athletesInvolved[1] is the assist provider.
+        // For subs: athletesInvolved[0] = player ON (already captured as main athlete),
+        //           athletesInvolved[1] / participants[1] = player going OFF.
+        // We store the second player as assist_player_id in both cases.
         const isGoalEvent = type === 'goal' || type === 'penalty';
-        const assistAthlete = isGoalEvent
+        const isSubEvent = type === 'sub';
+        const secondAthlete = (isGoalEvent || isSubEvent)
           ? (detail.participants?.[1]?.athlete ?? detail.athletesInvolved?.[1] ?? null)
           : null;
-        const assistName = playerName(assistAthlete) ?? (isGoalEvent ? assistNameFromText(detail.text) : null);
+        const secondName = playerName(secondAthlete) ?? (isGoalEvent ? assistNameFromText(detail.text) : null);
         let assistPlayerId: string | null = null;
-        if (assistName) {
-          assistPlayerId = `${teamCode}-ESPN-${assistAthlete?.id ?? `assist-${playerIdPart(assistName)}`}`;
+        if (secondName) {
+          const secondTeamCode = isSubEvent ? teamCode : teamCode; // same team for subs and assists
+          assistPlayerId = `${secondTeamCode}-ESPN-${secondAthlete?.id ?? `assist-${playerIdPart(secondName)}`}`;
           playerRows.push({
             id: assistPlayerId,
-            team_id: teamCode,
-            name: assistName,
-            shirt_number: playerShirtNumber(assistAthlete),
-            position: playerPosition(assistAthlete?.position),
+            team_id: secondTeamCode,
+            name: secondName,
+            shirt_number: playerShirtNumber(secondAthlete),
+            position: playerPosition(secondAthlete?.position),
             source: SOURCE,
             updated_at: syncedAt,
           });
-          log.push(`  assist: ${assistName}`);
+          if (isGoalEvent) log.push(`  assist: ${secondName}`);
+          if (isSubEvent) log.push(`  sub off: ${secondName}`);
         }
 
         eventRows.push({
@@ -618,6 +682,117 @@ Deno.serve(async (request) => {
         const { error } = await supabaseAdmin.from('match_events').upsert(uniqueEvents, { onConflict: 'id' });
         if (error) throw error;
         eventsInserted += uniqueEvents.length;
+      }
+
+      // ── Lineups ─────────────────────────────────────────────────────────────
+      // ESPN summary.rosters[] has one entry per team; each has roster[] with
+      // athlete, jersey, starter, and position.abbreviation.
+      if (summary?.rosters && summary.rosters.length > 0) {
+        const lineupRows: Record<string, unknown>[] = [];
+
+        for (const rosterEntry of summary.rosters) {
+          const teamCode = rosterEntry.team?.abbreviation?.toUpperCase();
+          if (!teamCode) continue;
+          const formation = undefined; // ESPN summary doesn't reliably expose formation here
+
+          for (const slot of rosterEntry.roster ?? []) {
+            const athlete = slot.athlete;
+            if (!athlete?.id || !athlete.displayName) continue;
+            const playerId = `${teamCode}-ESPN-${athlete.id}`;
+            const isStarter = slot.starter === true;
+            // ESPN puts position on the entry itself, not on the athlete sub-object
+            const posAbbr = slot.position?.abbreviation ?? slot.position?.name
+              ?? athlete.position?.abbreviation ?? (athlete as EspnAthlete).position;
+
+            lineupRows.push({
+              fixture_id: fixtureId,
+              team_id: teamCode,
+              player_id: playerId,
+              player_name: playerName(athlete) ?? athlete.displayName,
+              shirt_number: slot.jersey ? Number(slot.jersey) : (playerShirtNumber(athlete as EspnAthlete)),
+              position: playerPosition(posAbbr),
+              is_starter: isStarter,
+              formation: isStarter ? (formation ?? null) : null,
+              source: SOURCE,
+              updated_at: syncedAt,
+            });
+          }
+        }
+
+        if (lineupRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('match_lineups')
+            .upsert(lineupRows, { onConflict: 'fixture_id,player_id', ignoreDuplicates: false });
+          if (error) log.push(`lineup upsert error: ${formatError(error)}`);
+          else log.push(`Upserted ${lineupRows.length} lineup rows for ${fixtureId}`);
+        }
+
+        // Stamp sub minutes onto lineup rows using the sub events we just built.
+        const subEvents = eventRows.filter(e => e.type === 'sub');
+        for (const subEvent of subEvents) {
+          const onPlayerId = subEvent.player_id as string;
+          const offPlayerId = subEvent.assist_player_id as string | null;
+          const minute = subEvent.minute as number;
+
+          if (onPlayerId) {
+            await supabaseAdmin
+              .from('match_lineups')
+              .update({ subbed_on_minute: minute, subbed_for_player_id: offPlayerId, updated_at: syncedAt })
+              .eq('fixture_id', fixtureId)
+              .eq('player_id', onPlayerId)
+              .eq('edited_by_admin', false);
+          }
+          if (offPlayerId) {
+            await supabaseAdmin
+              .from('match_lineups')
+              .update({ subbed_off_minute: minute, subbed_for_player_id: onPlayerId, updated_at: syncedAt })
+              .eq('fixture_id', fixtureId)
+              .eq('player_id', offPlayerId)
+              .eq('edited_by_admin', false);
+          }
+        }
+      }
+
+      // ── Substitutions in event details (extend assist_player_id for subs) ──
+      // For sub events, athletesInvolved[0] = on, [1] = off.
+      // This is already stored via eventRows (player_id = on, assist_player_id = off).
+      // The lineup stamping above uses those rows. No extra work needed here.
+
+      // ── Boxscore stats ───────────────────────────────────────────────────────
+      const boxscoreTeams = (summary?.boxscore as { teams?: EspnBoxscoreTeam[] } | undefined)?.teams ?? [];
+      if (boxscoreTeams.length > 0) {
+        for (const bsTeam of boxscoreTeams) {
+          const teamCode = bsTeam.team?.abbreviation?.toUpperCase();
+          if (!teamCode) continue;
+
+          const statsRow: Record<string, unknown> = {
+            fixture_id: fixtureId,
+            team_id: teamCode,
+            source: SOURCE,
+            updated_at: syncedAt,
+          };
+          const unmapped: string[] = [];
+
+          for (const stat of bsTeam.statistics ?? []) {
+            const col = mapStatName(stat.name);
+            if (!col) {
+              if (stat.name) unmapped.push(stat.name);
+              continue;
+            }
+            const numVal = stat.value ?? (stat.displayValue ? parseFloat(stat.displayValue) : NaN);
+            if (Number.isFinite(numVal)) statsRow[col] = numVal;
+          }
+
+          if (unmapped.length > 0) {
+            log.push(`Unmapped ESPN stats for ${teamCode}: ${unmapped.join(', ')}`);
+          }
+
+          const { error } = await supabaseAdmin
+            .from('match_team_stats')
+            .upsert(statsRow, { onConflict: 'fixture_id,team_id', ignoreDuplicates: false });
+          if (error) log.push(`stats upsert error ${teamCode}: ${formatError(error)}`);
+          else log.push(`Upserted stats for ${fixtureId}/${teamCode}`);
+        }
       }
     }
 

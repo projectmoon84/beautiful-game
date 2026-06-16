@@ -2,6 +2,7 @@ import type {
   Team, Player, Group, Venue, Fixture, MatchEvent,
   GroupTableRow, PlayerStat, InsightCard,
   FormResult, Position, Stage, FixtureStatus, EventType,
+  MatchLineup, LineupSlot, MatchTeamStats,
 } from './types';
 import { supabase, isSupabaseConfigured } from './supabase';
 import {
@@ -36,6 +37,9 @@ let eventCache: MatchEvent[] = [];
 let insightCache: InsightCard[] = [];
 let standingsCache = new Map<string, GroupTableRow[]>();
 let playerStatCache: PlayerStat[] = [];
+// Keyed by `${fixtureId}:${teamId}`
+let lineupCache = new Map<string, MatchLineup>();
+let teamStatsCache = new Map<string, MatchTeamStats>();
 
 type FixtureRow = {
   id: string;
@@ -77,6 +81,63 @@ const MATCH_EVENT_SELECT = `
   player:players!match_events_player_id_fkey(name),
   assist_player:players!match_events_assist_player_id_fkey(name)
 `;
+
+type MatchLineupRow = {
+  fixture_id: string;
+  team_id: string;
+  player_id: string;
+  player_name: string;
+  shirt_number: number;
+  position: string;
+  is_starter: boolean;
+  formation: string | null;
+  subbed_off_minute: number | null;
+  subbed_on_minute: number | null;
+  subbed_for_player_id: string | null;
+};
+
+type MatchTeamStatsRow = {
+  fixture_id: string;
+  team_id: string;
+  possession_pct: number | null;
+  shots_on_target: number | null;
+  shots_off_target: number | null;
+  shots_blocked: number | null;
+  corners: number | null;
+  offsides: number | null;
+  fouls: number | null;
+  yellow_cards: number | null;
+  red_cards: number | null;
+};
+
+function mapLineupRow(row: MatchLineupRow): LineupSlot {
+  return {
+    playerId: row.player_id,
+    playerName: row.player_name,
+    shirtNumber: row.shirt_number,
+    position: row.position as Position,
+    isStarter: row.is_starter,
+    ...(row.subbed_off_minute !== null && { subbedOffMinute: row.subbed_off_minute }),
+    ...(row.subbed_on_minute !== null && { subbedOnMinute: row.subbed_on_minute }),
+    ...(row.subbed_for_player_id !== null && { subbedForPlayerId: row.subbed_for_player_id }),
+  };
+}
+
+function mapTeamStatsRow(row: MatchTeamStatsRow): MatchTeamStats {
+  return {
+    fixtureId: row.fixture_id,
+    teamId: row.team_id,
+    ...(row.possession_pct !== null && { possessionPct: row.possession_pct }),
+    ...(row.shots_on_target !== null && { shotsOnTarget: row.shots_on_target }),
+    ...(row.shots_off_target !== null && { shotsOffTarget: row.shots_off_target }),
+    ...(row.shots_blocked !== null && { shotsBlocked: row.shots_blocked }),
+    ...(row.corners !== null && { corners: row.corners }),
+    ...(row.offsides !== null && { offsides: row.offsides }),
+    ...(row.fouls !== null && { fouls: row.fouls }),
+    ...(row.yellow_cards !== null && { yellowCards: row.yellow_cards }),
+    ...(row.red_cards !== null && { redCards: row.red_cards }),
+  };
+}
 
 function mapFixtureRow(row: FixtureRow): Fixture {
   return {
@@ -390,18 +451,37 @@ export const dataService = {
       .sort((a, b) => a.minute - b.minute);
   },
 
+  matchLineup(fixtureId: string, teamId: string): MatchLineup | null {
+    const key = `${fixtureId}:${teamId}`;
+    return lineupCache.get(key) ?? null;
+  },
+
+  matchTeamStats(fixtureId: string, teamId: string): MatchTeamStats | null {
+    const key = `${fixtureId}:${teamId}`;
+    return teamStatsCache.get(key) ?? null;
+  },
+
   async refreshMatch(fixtureId: string): Promise<boolean> {
     if (!supabase || !isSupabaseConfigured) return false;
 
-    const [{ data: fixtureData, error: fixtureError }, { data: eventsData, error: eventsError }] = await Promise.all([
+    const [
+      { data: fixtureData, error: fixtureError },
+      { data: eventsData, error: eventsError },
+      { data: lineupData, error: lineupError },
+      { data: statsData, error: statsError },
+    ] = await Promise.all([
       supabase.from('fixtures').select('*').eq('id', fixtureId).maybeSingle(),
       supabase.from('match_events').select(MATCH_EVENT_SELECT).eq('fixture_id', fixtureId).order('minute'),
+      supabase.from('match_lineups').select('*').eq('fixture_id', fixtureId),
+      supabase.from('match_team_stats').select('*').eq('fixture_id', fixtureId),
     ]);
 
     if (fixtureError || eventsError || !fixtureData) {
       console.warn('[dataService] Match refresh failed', fixtureError ?? eventsError);
       return false;
     }
+    if (lineupError) console.warn('[dataService] Lineup fetch failed', lineupError);
+    if (statsError) console.warn('[dataService] Stats fetch failed', statsError);
 
     const refreshedFixture = mapFixtureRow(fixtureData);
     fixtureCache = fixtureCache.map(fixture => fixture.id === fixtureId ? refreshedFixture : fixture);
@@ -433,6 +513,30 @@ export const dataService = {
           playerCache.set(player.id, mapPlayerRow(player));
         }
       }
+    }
+
+    // Hydrate lineup cache
+    if (lineupData && lineupData.length > 0) {
+      const byTeam = new Map<string, MatchLineupRow[]>();
+      for (const row of lineupData as unknown as MatchLineupRow[]) {
+        const existing = byTeam.get(row.team_id) ?? [];
+        byTeam.set(row.team_id, [...existing, row]);
+      }
+      for (const [teamId, rows] of byTeam) {
+        const formation = rows.find(r => r.is_starter && r.formation)?.formation ?? undefined;
+        const lineup: MatchLineup = {
+          fixtureId,
+          teamId,
+          formation,
+          players: rows.map(r => mapLineupRow(r)),
+        };
+        lineupCache.set(`${fixtureId}:${teamId}`, lineup);
+      }
+    }
+
+    // Hydrate team stats cache
+    for (const row of (statsData ?? []) as unknown as MatchTeamStatsRow[]) {
+      teamStatsCache.set(`${fixtureId}:${row.team_id}`, mapTeamStatsRow(row));
     }
 
     return true;
