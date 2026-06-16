@@ -3,10 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import GroupTable from '../components/GroupTable';
 import ShareComposer from '../components/ShareComposer';
+import MatchControlBar, { type MatchTab, type MatchControlBarStatus } from '../components/MatchControlBar';
+import MatchStats from '../components/MatchStats';
+import MatchLineups from '../components/MatchLineups';
 import { LIVE_DEMO_EVENTS, LIVE_DEMO_FIXTURE } from '../data/liveDemo';
 import { formatDate, formatTime } from '../utils/format';
 import { randomTeamFact } from '../utils/facts';
 import type { Fixture, GroupTableRow, MatchEvent, Team } from '../data/types';
+import { SubIndicator } from '../components/MatchLineups';
 
 // PitchMarkings geometry: the 896×896 ring container sits at top:−342px
 // relative to wherever it's anchored, so its geometric centre is at y=106px
@@ -76,6 +80,7 @@ export default function MatchPage() {
       allEvents={allEvents}
       rows={rows}
       venue={venue}
+      isLiveDemo={isLiveDemo}
       isScored={isScored}
       isLive={isLive}
       isUpcoming={isUpcoming}
@@ -93,7 +98,7 @@ export default function MatchPage() {
 
 function MatchPageContent({
   fixture, home, away, awayInk, allEvents, rows, venue,
-  isScored, isLive, isUpcoming, hasTimeline,
+  isLiveDemo, isScored, isLive, isUpcoming, hasTimeline,
   homeFact, awayFact,
   onBack, shareOpen, setShareOpen,
 }: {
@@ -103,6 +108,7 @@ function MatchPageContent({
   awayInk: string;
   allEvents: MatchEvent[];
   rows: GroupTableRow[];
+  isLiveDemo: boolean;
   venue: ReturnType<typeof dataService.venue>;
   isScored: boolean;
   isLive: boolean;
@@ -115,6 +121,22 @@ function MatchPageContent({
   setShareOpen: (v: boolean) => void;
 }) {
   const navigate = useNavigate();
+
+  // ── Tab state ──────────────────────────────────────────────────────────────
+  const [tab, setTab] = useState<MatchTab>('timeline');
+
+  const controlBarStatus = useMemo<MatchControlBarStatus>(() => {
+    if (isLive) return { kind: 'live', minute: fixture.minute ?? 0 };
+    if (isUpcoming) {
+      return {
+        kind: 'upcoming',
+        date: formatDate(fixture.kickoffUtc),
+        time: formatTime(fixture.kickoffUtc),
+      };
+    }
+    return { kind: 'finished' };
+  }, [isLive, isUpcoming, fixture.minute, fixture.kickoffUtc]);
+
   // ── Reveal animation state ─────────────────────────────────────────────────
   const [phase, setPhase] = useState<RevealPhase>('enter');
   const [revealedCount, setRevealedCount] = useState(0);
@@ -243,7 +265,7 @@ function MatchPageContent({
 
   // The timeline shows the events revealed so far; once done, use the live array.
   const shownEvents: MatchEvent[] = isDone
-    ? allEvents.filter(e => e.type === 'goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red')
+    ? allEvents.filter(e => e.type === 'goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red' || e.type === 'sub')
     : playableEvents.slice(0, revealedCount);
 
   return (
@@ -272,132 +294,133 @@ function MatchPageContent({
         }}
       />
 
-      {/* ── Score hero + events — rings clipped to this area ─────────────────── */}
+      {/* ── Score hero — rings clipped to this section ───────────────────────── */}
       <div className="relative overflow-hidden">
         <PitchRings reveal={ringsVisible} />
 
-      {/* ── Score hero ────────────────────────────────────────────────────────── */}
-      <section
-        className="relative w-full shrink-0"
-        style={{ height: SECTION_H, background: '#000' }}
-      >
-        {/* Team colour wash */}
-        <div
-          className="absolute inset-0 z-0 flex"
-          style={{ opacity: colorsVisible ? 1 : 0, transition: 'opacity 520ms ease-out' }}
+        <section
+          className="relative w-full shrink-0"
+          style={{ height: SECTION_H, background: '#000' }}
         >
-          <div className="flex-1" style={{ background: home.primaryHex }} />
-          <div className="flex-1" style={{ background: away.primaryHex }} />
-        </div>
-
-        {/* Top info bar */}
-        <div
-          className="absolute left-0 right-0 top-4 z-20 flex px-5"
-          style={{ opacity: scoreVisible ? 1 : 0, transition: 'opacity 300ms ease-out' }}
-        >
-          <span className="flex-1 text-[12px] font-medium leading-none" style={{ color: home.secondaryHex }}>
-            {formatDate(fixture.kickoffUtc)} · {formatTime(fixture.kickoffUtc)}
-          </span>
-          <span className="flex-1 text-right text-[12px] font-medium leading-none" style={{ color: awayInk }}>
-            Group {fixture.groupId}
-          </span>
-        </div>
-
-        {/* Score row — pinned exactly at the centre-spot y */}
-        <div
-          className="absolute left-0 right-0 z-20 flex items-center"
-          style={{ top: CENTRE_SPOT_Y, transform: 'translateY(-50%)' }}
-        >
-          {/* Home: code → score, right-aligned toward centre */}
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-7 pl-5 pr-2">
-            <span
-              className="min-w-0 truncate text-[44px] font-bold uppercase leading-none sm:text-[56px]"
-              style={{
-                color: home.secondaryHex,
-                opacity: scoreVisible ? 1 : 0,
-                animation: scoreVisible ? 'ui-in 450ms cubic-bezier(0.16,1,0.3,1) both' : undefined,
-              }}
-            >
-              {home.shortCode}
-            </span>
-            {isScored ? (
-              <TickerNumber value={displayHomeScore ?? 0} color={home.secondaryHex} visible={scoreVisible} />
-            ) : (
-              <FlagMarker flag={home.flagEmoji} visible={scoreVisible} />
-            )}
-          </div>
-
-          {/* Away: score → code, left-aligned from centre */}
-          <div className="flex min-w-0 flex-1 items-center justify-start gap-7 pl-2 pr-5">
-            {isScored ? (
-              <TickerNumber value={displayAwayScore ?? 0} color={awayInk} visible={scoreVisible} />
-            ) : (
-              <FlagMarker flag={away.flagEmoji} visible={scoreVisible} />
-            )}
-            <span
-              className="min-w-0 truncate text-[44px] font-bold uppercase leading-none sm:text-[56px]"
-              style={{
-                color: awayInk,
-                opacity: scoreVisible ? 1 : 0,
-                animation: scoreVisible ? 'ui-in 450ms cubic-bezier(0.16,1,0.3,1) both' : undefined,
-              }}
-            >
-              {away.shortCode}
-            </span>
-          </div>
-        </div>
-
-        {/* LIVE pill */}
-        {isLive && scoreVisible && (
+          {/* Team colour wash */}
           <div
-            className="absolute right-5 z-30 flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1 pr-1.5"
-            style={{ top: CENTRE_SPOT_Y + 30 }}
+            className="absolute inset-0 z-0 flex"
+            style={{ opacity: colorsVisible ? 1 : 0, transition: 'opacity 520ms ease-out' }}
           >
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#5EE9B5]" />
-            <span className="text-[10px] font-medium leading-none text-white">
-              {fixture.minute ?? 0} min
-            </span>
+            <div className="flex-1" style={{ background: home.primaryHex }} />
+            <div className="flex-1" style={{ background: away.primaryHex }} />
           </div>
-        )}
-      </section>
 
-      {/* ── Events + info ──────────────────────────────────────────────────────── */}
-      <div className="relative flex w-full flex-1 flex-col">
-        {/* Split team colour bg */}
-        <div className="absolute inset-0 z-0 flex">
-          <div className="flex-1" style={{ background: home.primaryHex }} />
-          <div className="flex-1" style={{ background: away.primaryHex }} />
-        </div>
-        {/* Progressive event timeline — renders only revealed events */}
-        {shownEvents.length > 0 && (
-          <EventTimeline
-            events={shownEvents}
-            homeTeamId={home.id}
-            homeColor={home.secondaryHex}
-            awayColor={awayInk}
-          />
-        )}
+          {/* Score row — pinned exactly at the centre-spot y */}
+          <div
+            className="absolute left-0 right-0 z-20 flex items-center"
+            style={{ top: CENTRE_SPOT_Y, transform: 'translateY(-50%)' }}
+          >
+            {/* Home: code → score, right-aligned toward centre */}
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-7 pl-5 pr-2">
+              <span
+                className="min-w-0 truncate text-[44px] font-bold uppercase leading-none sm:text-[56px]"
+                style={{
+                  color: home.secondaryHex,
+                  opacity: scoreVisible ? 1 : 0,
+                  animation: scoreVisible ? 'ui-in 450ms cubic-bezier(0.16,1,0.3,1) both' : undefined,
+                }}
+              >
+                {home.shortCode}
+              </span>
+              {isScored ? (
+                <TickerNumber value={displayHomeScore ?? 0} color={home.secondaryHex} visible={scoreVisible} />
+              ) : (
+                <FlagMarker flag={home.flagEmoji} visible={scoreVisible} />
+              )}
+            </div>
 
-        {/* Info rows */}
-        <div ref={bottomRef} className={['relative z-20 mt-auto flex', shownEvents.length > 0 ? 'pt-20' : ''].join(' ')}>
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
-            {isUpcoming && venue && (
-              <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
-            )}
-            <InfoRow label="Title odds" value={home.titleOdds} color={home.secondaryHex} />
-            <InfoRow label="That's a fact" value={homeFact} color={home.secondaryHex} />
+            {/* Away: score → code, left-aligned from centre */}
+            <div className="flex min-w-0 flex-1 items-center justify-start gap-7 pl-2 pr-5">
+              {isScored ? (
+                <TickerNumber value={displayAwayScore ?? 0} color={awayInk} visible={scoreVisible} />
+              ) : (
+                <FlagMarker flag={away.flagEmoji} visible={scoreVisible} />
+              )}
+              <span
+                className="min-w-0 truncate text-[44px] font-bold uppercase leading-none sm:text-[56px]"
+                style={{
+                  color: awayInk,
+                  opacity: scoreVisible ? 1 : 0,
+                  animation: scoreVisible ? 'ui-in 450ms cubic-bezier(0.16,1,0.3,1) both' : undefined,
+                }}
+              >
+                {away.shortCode}
+              </span>
+            </div>
           </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: awayInk }}>
-            {isUpcoming && (
-              <InfoRow label="Last time" value={`${home.shortCode} 1 - 1 ${away.shortCode}`} color={awayInk} align="right" />
-            )}
-            <InfoRow label="Title odds" value={away.titleOdds} color={awayInk} align="right" />
-            <InfoRow label="That's a fact" value={awayFact} color={awayInk} align="right" />
-          </div>
-        </div>
-      </div>
-
+        </section>
       </div>{/* end rings-clipped wrapper */}
+
+      {/* ── Control bar ──────────────────────────────────────────────────────── */}
+      <MatchControlBar
+        activeTab={tab}
+        onTab={setTab}
+        status={controlBarStatus}
+      />
+
+      {/* ── Body — swaps with active tab ─────────────────────────────────────── */}
+      {tab === 'timeline' && (
+        <div className="relative flex w-full flex-1 flex-col">
+          {/* Split team colour bg */}
+          <div className="absolute inset-0 z-0 flex">
+            <div className="flex-1" style={{ background: home.primaryHex }} />
+            <div className="flex-1" style={{ background: away.primaryHex }} />
+          </div>
+          {/* Progressive event timeline — renders only revealed events */}
+          {shownEvents.length > 0 && (
+            <EventTimeline
+              events={shownEvents}
+              homeTeamId={home.id}
+              homeColor={home.secondaryHex}
+              awayColor={awayInk}
+            />
+          )}
+
+          {/* Info rows */}
+          <div ref={bottomRef} className={['relative z-20 mt-auto flex', shownEvents.length > 0 ? 'pt-20' : ''].join(' ')}>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
+              {isUpcoming && venue && (
+                <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
+              )}
+              <InfoRow label="Title odds" value={home.titleOdds} color={home.secondaryHex} />
+              <InfoRow label="That's a fact" value={homeFact} color={home.secondaryHex} />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: awayInk }}>
+              {isUpcoming && (
+                <InfoRow label="Last time" value={`${home.shortCode} 1 - 1 ${away.shortCode}`} color={awayInk} align="right" />
+              )}
+              <InfoRow label="Title odds" value={away.titleOdds} color={awayInk} align="right" />
+              <InfoRow label="That's a fact" value={awayFact} color={awayInk} align="right" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'lineups' && (
+        <MatchLineups
+          home={home}
+          away={away}
+          homeLineup={isLiveDemo ? null : dataService.matchLineup(fixture.id, home.id)}
+          awayLineup={isLiveDemo ? null : dataService.matchLineup(fixture.id, away.id)}
+          homeSquad={dataService.squad(home.id)}
+          awaySquad={dataService.squad(away.id)}
+        />
+      )}
+
+      {tab === 'stats' && (
+        <MatchStats
+          home={home}
+          away={away}
+          homeStats={isLiveDemo ? null : dataService.matchTeamStats(fixture.id, home.id)}
+          awayStats={isLiveDemo ? null : dataService.matchTeamStats(fixture.id, away.id)}
+        />
+      )}
 
       <GroupTable
         label={`Group ${fixture.groupId}`}
@@ -646,8 +669,27 @@ function TimelineEvent({
 }) {
   const player = dataService.player(event.playerId);
   const assist = event.assistPlayerId ? dataService.player(event.assistPlayerId) : undefined;
+  // For subs: playerId = player coming ON, assistPlayerId = player going OFF
   const playerName = player?.name ?? event.playerName ?? 'Unknown';
   const assistName = assist?.name ?? event.assistPlayerName;
+  const isSub = event.type === 'sub';
+
+  const nameBlock = (textAlign: 'left' | 'right') => (
+    <div className="min-w-0" style={{ color, textAlign }}>
+      <div className="text-[13px] font-semibold leading-[17px]">{playerName}</div>
+      {assistName && (
+        <div className="text-[13px] font-normal leading-[17px]" style={{ opacity: 0.65 }}>
+          {assistName}
+        </div>
+      )}
+    </div>
+  );
+
+  const iconEl = isSub ? (
+    <SubIndicator direction="on" minute={event.minute} />
+  ) : (
+    <EventIcon type={event.type} />
+  );
 
   return (
     <div
@@ -658,15 +700,8 @@ function TimelineEvent({
       <div className="flex min-w-0 flex-1 items-start justify-end gap-2 pr-7">
         {isHome && (
           <>
-            <div className="min-w-0 text-right" style={{ color }}>
-              <div className="text-[13px] font-semibold leading-[17px]">{playerName}</div>
-              {assistName && (
-                <div className="text-[13px] font-normal leading-[17px]" style={{ opacity: 0.65 }}>
-                  {assistName}
-                </div>
-              )}
-            </div>
-            <EventIcon type={event.type} />
+            {nameBlock('right')}
+            {iconEl}
           </>
         )}
       </div>
@@ -680,15 +715,8 @@ function TimelineEvent({
       <div className="flex min-w-0 flex-1 items-start gap-2 pl-7">
         {!isHome && (
           <>
-            <EventIcon type={event.type} />
-            <div className="min-w-0" style={{ color }}>
-              <div className="text-[13px] font-semibold leading-[17px]">{playerName}</div>
-              {assistName && (
-                <div className="text-[13px] font-normal leading-[17px]" style={{ opacity: 0.65 }}>
-                  {assistName}
-                </div>
-              )}
-            </div>
+            {iconEl}
+            {nameBlock('left')}
           </>
         )}
       </div>

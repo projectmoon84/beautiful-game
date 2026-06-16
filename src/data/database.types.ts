@@ -123,6 +123,108 @@ export type Database = {
         }
         Relationships: []
       }
+      match_lineups: {
+        Row: {
+          fixture_id: string
+          team_id: string
+          player_id: string
+          player_name: string
+          shirt_number: number
+          position: string
+          is_starter: boolean
+          formation: string | null
+          subbed_off_minute: number | null
+          subbed_on_minute: number | null
+          subbed_for_player_id: string | null
+          source: string | null
+          edited_by_admin: boolean
+          updated_at: string
+        }
+        Insert: {
+          fixture_id: string
+          team_id: string
+          player_id: string
+          player_name: string
+          shirt_number?: number
+          position: string
+          is_starter?: boolean
+          formation?: string | null
+          subbed_off_minute?: number | null
+          subbed_on_minute?: number | null
+          subbed_for_player_id?: string | null
+          source?: string | null
+          edited_by_admin?: boolean
+          updated_at?: string
+        }
+        Update: {
+          fixture_id?: string
+          team_id?: string
+          player_id?: string
+          player_name?: string
+          shirt_number?: number
+          position?: string
+          is_starter?: boolean
+          formation?: string | null
+          subbed_off_minute?: number | null
+          subbed_on_minute?: number | null
+          subbed_for_player_id?: string | null
+          source?: string | null
+          edited_by_admin?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      match_team_stats: {
+        Row: {
+          fixture_id: string
+          team_id: string
+          possession_pct: number | null
+          shots_on_target: number | null
+          shots_off_target: number | null
+          shots_blocked: number | null
+          corners: number | null
+          offsides: number | null
+          fouls: number | null
+          yellow_cards: number | null
+          red_cards: number | null
+          source: string | null
+          edited_by_admin: boolean
+          updated_at: string
+        }
+        Insert: {
+          fixture_id: string
+          team_id: string
+          possession_pct?: number | null
+          shots_on_target?: number | null
+          shots_off_target?: number | null
+          shots_blocked?: number | null
+          corners?: number | null
+          offsides?: number | null
+          fouls?: number | null
+          yellow_cards?: number | null
+          red_cards?: number | null
+          source?: string | null
+          edited_by_admin?: boolean
+          updated_at?: string
+        }
+        Update: {
+          fixture_id?: string
+          team_id?: string
+          possession_pct?: number | null
+          shots_on_target?: number | null
+          shots_off_target?: number | null
+          shots_blocked?: number | null
+          corners?: number | null
+          offsides?: number | null
+          fouls?: number | null
+          yellow_cards?: number | null
+          red_cards?: number | null
+          source?: string | null
+          edited_by_admin?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       news: {
         Row: {
           fixture_id: string | null
