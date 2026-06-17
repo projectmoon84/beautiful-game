@@ -213,7 +213,7 @@ async function loadFromSupabase(): Promise<void> {
     supabase.from('groups').select('*'),
     supabase.from('venues').select('*'),
     supabase.from('teams').select('*'),
-    supabase.from('players').select('*'),
+    supabase.from('players').select('*').limit(3000),
     supabase.from('fixtures').select('*').order('kickoff_utc'),
     supabase.from('match_events').select(MATCH_EVENT_SELECT).order('minute'),
     supabase.from('insights').select('*').eq('is_published', true),
