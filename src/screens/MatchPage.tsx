@@ -683,9 +683,9 @@ function TimelineEvent({
 
   const nameBlock = (textAlign: 'left' | 'right') => (
     <div className="min-w-0" style={{ color, textAlign }}>
-      <div className="text-[14px] font-semibold leading-[14px]">{playerName}</div>
+      <div className="text-[13px] font-semibold leading-[13px]">{playerName}</div>
       {subLabel && (
-        <div className="mt-0.5 text-[14px] font-normal leading-[14px]">
+        <div className="mt-0.5 text-[13px] font-normal leading-[13px]">
           {subLabel}
         </div>
       )}
