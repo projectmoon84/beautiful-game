@@ -422,7 +422,11 @@ export const dataService = {
   player(id: string): Player | undefined { return playerCache.get(id); },
 
   squad(teamId: string): Player[] {
-    return [...playerCache.values()].filter(p => p.teamId === teamId);
+    const all = [...playerCache.values()].filter(p => p.teamId === teamId);
+    // ESPN event players use IDs like "MEX-ESPN-12345" and are only for event attribution.
+    // Prefer the official openfootball squad when it exists.
+    const official = all.filter(p => !p.id.includes('-ESPN-'));
+    return official.length > 0 ? official : all;
   },
 
   allFixtures(): Fixture[] { return fixtureCache; },
