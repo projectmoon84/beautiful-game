@@ -193,7 +193,6 @@ function PlayerRow({
   return (
     <div
       className={`flex items-center gap-1.5 py-[5px] ${isRight ? 'flex-row-reverse' : ''}`}
-      style={{ borderBottom: `1px solid ${inkColor}14` }}
     >
       {indicatorEl && !isRight && indicatorEl}
       {isRight ? (
