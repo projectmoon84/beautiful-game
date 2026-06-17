@@ -148,7 +148,7 @@ function MatchPageContent({
   const playableRef = useRef<MatchEvent[]>(null!);
   if (playableRef.current === null) {
     playableRef.current = [...allEvents]
-      .filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red')
+      .filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'second_yellow' || e.type === 'red')
       .sort((a, b) => a.minute - b.minute);
   }
   const playableEvents = playableRef.current;
@@ -265,7 +265,7 @@ function MatchPageContent({
 
   // The timeline shows the events revealed so far; once done, use the live array.
   const shownEvents: MatchEvent[] = isDone
-    ? allEvents.filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'var_cancelled' || e.type === 'penalty' || e.type === 'penalty_missed' || e.type === 'yellow' || e.type === 'red' || e.type === 'sub')
+    ? allEvents.filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'var_cancelled' || e.type === 'penalty' || e.type === 'penalty_missed' || e.type === 'yellow' || e.type === 'second_yellow' || e.type === 'red' || e.type === 'sub')
     : playableEvents.slice(0, revealedCount);
 
   return (
@@ -730,8 +730,26 @@ function TimelineEvent({
 const BALL_PATH = 'M12.9402 2.05978C10.2191 -0.676139 5.7957 -0.688074 3.05978 2.03306C0.323861 4.7542 0.311926 9.17757 3.03306 11.9135L3.05978 11.9402C5.78086 14.6761 10.2043 14.6881 12.9402 11.9669C15.6761 9.2458 15.6881 4.82243 12.9669 2.0865L12.9402 2.05978ZM8.43673 2.41912L10.056 1.24278C11.1578 1.63907 12.1238 2.3418 12.8391 3.26914L12.221 5.1693L10.26 5.80666L8.43671 4.48191L8.43673 2.41912ZM5.94417 1.24278L7.56342 2.41912V4.48187L5.7401 5.80661L3.7791 5.16926L3.16107 3.26909C3.87689 2.34177 4.84234 1.63911 5.94417 1.24278ZM2.95586 10.4495C2.29235 9.48405 1.92221 8.34697 1.88981 7.17631L3.50849 5.99996L5.47008 6.63732L6.16598 8.78084L4.95439 10.4496L2.95586 10.4495ZM9.72063 12.8659C8.59715 13.1951 7.40259 13.1951 6.27908 12.8659L5.66049 10.9624L6.87265 9.29422H9.12636L10.3385 10.963L9.72063 12.8659ZM11.0454 10.449L9.83435 8.78086L10.5308 6.63733L12.4924 5.99998L14.1105 7.17632C14.0781 8.34755 13.708 9.48403 13.0445 10.4495L11.0454 10.449Z';
 
 function EventIcon({ type }: { type: MatchEvent['type'] }) {
-  if (type === 'yellow') return <span className="mt-0.5 block h-3.5 w-2.5 rounded-[2px] border border-white/60 bg-[#FFDF00]" />;
-  if (type === 'red')    return <span className="mt-0.5 block h-3.5 w-2.5 rounded-[2px] border border-white/60 bg-[#E31B23]" />;
+  if (type === 'yellow') return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="7" width="10" height="14" rx="2" fill="#FFDF00"/>
+      <rect x="7.5" y="0.5" width="9" height="13" rx="1.5" stroke="white" strokeOpacity="0.6"/>
+    </svg>
+  );
+  if (type === 'red') return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="7" width="10" height="14" rx="2" fill="#E7000B"/>
+      <rect x="7.5" y="0.5" width="9" height="13" rx="1.5" stroke="white" strokeOpacity="0.6"/>
+    </svg>
+  );
+  if (type === 'second_yellow') return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="5" y="3" width="10" height="14" rx="2" fill="#FFDF00"/>
+      <rect x="5.5" y="3.5" width="9" height="13" rx="1.5" stroke="white" strokeOpacity="0.6"/>
+      <rect x="8" width="10" height="14" rx="2" fill="#E7000B"/>
+      <rect x="8.5" y="0.5" width="9" height="13" rx="1.5" stroke="white" strokeOpacity="0.6"/>
+    </svg>
+  );
 
   const isOwnGoal  = type === 'own_goal';
   const badge      = type === 'own_goal'        ? 'OG'
@@ -758,7 +776,7 @@ function EventIcon({ type }: { type: MatchEvent['type'] }) {
       )}
       {badge && (
         <span
-          className="rounded-[2px] bg-black px-[3px] text-[7px] font-medium leading-none tracking-[0.35px] text-white"
+          className="rounded-[2px] bg-black p-[2px] text-[7px] font-medium leading-none tracking-[0.35px] text-white"
           style={isVAR ? { outline: '0.5px solid white' } : undefined}
         >
           {badge}

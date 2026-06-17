@@ -1,6 +1,6 @@
 // ── Primitive types ──────────────────────────────────────────────
 export type FormResult = 'W' | 'D' | 'L';
-export type EventType = 'goal' | 'own_goal' | 'penalty' | 'penalty_missed' | 'var_goal' | 'var_cancelled' | 'yellow' | 'red' | 'sub';
+export type EventType = 'goal' | 'own_goal' | 'penalty' | 'penalty_missed' | 'var_goal' | 'var_cancelled' | 'yellow' | 'second_yellow' | 'red' | 'sub';
 export type FixtureStatus = 'scheduled' | 'live' | 'finished';
 export type Stage = 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'final';
 export type Position = 'GK' | 'DEF' | 'MID' | 'FWD';
