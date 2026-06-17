@@ -757,12 +757,12 @@ function EventIcon({ type }: { type: MatchEvent['type'] }) {
         </svg>
       )}
       {badge && (
-        <div
-          className="rounded-[2px] bg-black px-[3px] py-0"
+        <span
+          className="rounded-[2px] bg-black px-[3px] text-[7px] font-medium leading-none tracking-[0.35px] text-white"
           style={isVAR ? { outline: '0.5px solid white' } : undefined}
         >
-          <span className="text-[7px] font-medium leading-[7px] tracking-[0.35px] text-white">{badge}</span>
-        </div>
+          {badge}
+        </span>
       )}
     </div>
   );
