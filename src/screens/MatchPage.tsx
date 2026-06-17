@@ -10,7 +10,7 @@ import { LIVE_DEMO_EVENTS, LIVE_DEMO_FIXTURE } from '../data/liveDemo';
 import { formatDate, formatTime } from '../utils/format';
 import { randomTeamFact } from '../utils/facts';
 import type { Fixture, GroupTableRow, MatchEvent, Team } from '../data/types';
-import { SubIndicator } from '../components/MatchLineups';
+
 
 // PitchMarkings geometry: the 896×896 ring container sits at top:−342px
 // relative to wherever it's anchored, so its geometric centre is at y=106px
@@ -148,7 +148,7 @@ function MatchPageContent({
   const playableRef = useRef<MatchEvent[]>(null!);
   if (playableRef.current === null) {
     playableRef.current = [...allEvents]
-      .filter(e => e.type === 'goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red')
+      .filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red')
       .sort((a, b) => a.minute - b.minute);
   }
   const playableEvents = playableRef.current;
@@ -221,7 +221,7 @@ function MatchPageContent({
     playableEvents.forEach((evt, i) => {
       schedule(() => {
         setRevealedCount(i + 1);
-        if (evt.type === 'goal' || evt.type === 'penalty') {
+        if (evt.type === 'goal' || evt.type === 'own_goal' || evt.type === 'var_goal' || evt.type === 'penalty') {
           const team = evt.teamId === home.id ? home : away;
           setConfettiItems(prev => [
             ...prev,
@@ -251,7 +251,7 @@ function MatchPageContent({
       ? (fixture.homeScore ?? 0)
       : playableEvents
           .slice(0, revealedCount)
-          .filter(e => (e.type === 'goal' || e.type === 'penalty') && e.teamId === home.id)
+          .filter(e => (e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'penalty') && e.teamId === home.id)
           .length
     : null;
   const displayAwayScore = isScored
@@ -259,13 +259,13 @@ function MatchPageContent({
       ? (fixture.awayScore ?? 0)
       : playableEvents
           .slice(0, revealedCount)
-          .filter(e => (e.type === 'goal' || e.type === 'penalty') && e.teamId === away.id)
+          .filter(e => (e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'penalty') && e.teamId === away.id)
           .length
     : null;
 
   // The timeline shows the events revealed so far; once done, use the live array.
   const shownEvents: MatchEvent[] = isDone
-    ? allEvents.filter(e => e.type === 'goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'red' || e.type === 'sub')
+    ? allEvents.filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'var_cancelled' || e.type === 'penalty' || e.type === 'penalty_missed' || e.type === 'yellow' || e.type === 'red' || e.type === 'sub')
     : playableEvents.slice(0, revealedCount);
 
   return (
@@ -669,35 +669,38 @@ function TimelineEvent({
 }) {
   const player = dataService.player(event.playerId);
   const assist = event.assistPlayerId ? dataService.player(event.assistPlayerId) : undefined;
-  // For subs: playerId = player coming ON, assistPlayerId = player going OFF
   const playerName = player?.name ?? event.playerName ?? 'Unknown';
   const assistName = assist?.name ?? event.assistPlayerName;
   const isSub = event.type === 'sub';
 
+  // Sub-label shown beneath the player name for certain event types
+  const subLabel =
+    event.type === 'var_goal'      ? 'Awarded' :
+    event.type === 'var_cancelled' ? 'No goal' :
+    isSub                          ? assistName :   // player going off
+    assistName                     ? assistName :   // goal assist
+    undefined;
+
   const nameBlock = (textAlign: 'left' | 'right') => (
     <div className="min-w-0" style={{ color, textAlign }}>
-      <div className="text-[13px] font-semibold leading-[17px]">{playerName}</div>
-      {assistName && (
-        <div className="text-[13px] font-normal leading-[17px]" style={{ opacity: 0.65 }}>
-          {assistName}
+      <div className="text-[14px] font-semibold leading-[14px]">{playerName}</div>
+      {subLabel && (
+        <div className="mt-0.5 text-[14px] font-normal leading-[14px]">
+          {subLabel}
         </div>
       )}
     </div>
   );
 
-  const iconEl = isSub ? (
-    <SubIndicator direction="on" minute={event.minute} />
-  ) : (
-    <EventIcon type={event.type} />
-  );
+  const iconEl = isSub ? <SubIcon /> : <EventIcon type={event.type} />;
 
   return (
     <div
-      className="flex w-full items-start py-[7px]"
+      className="flex w-full items-start py-1"
       style={{ animation: 'event-row-in 600ms cubic-bezier(0.16,1,0.3,1) both' }}
     >
       {/* Left half — home events */}
-      <div className="flex min-w-0 flex-1 items-start justify-end gap-2 pr-7">
+      <div className="flex min-w-0 flex-1 items-start justify-end gap-4 pr-7">
         {isHome && (
           <>
             {nameBlock('right')}
@@ -712,7 +715,7 @@ function TimelineEvent({
       </div>
 
       {/* Right half — away events */}
-      <div className="flex min-w-0 flex-1 items-start gap-2 pl-7">
+      <div className="flex min-w-0 flex-1 items-start gap-4 pl-7">
         {!isHome && (
           <>
             {iconEl}
@@ -724,16 +727,67 @@ function TimelineEvent({
   );
 }
 
+const BALL_PATH = 'M12.9402 2.05978C10.2191 -0.676139 5.7957 -0.688074 3.05978 2.03306C0.323861 4.7542 0.311926 9.17757 3.03306 11.9135L3.05978 11.9402C5.78086 14.6761 10.2043 14.6881 12.9402 11.9669C15.6761 9.2458 15.6881 4.82243 12.9669 2.0865L12.9402 2.05978ZM8.43673 2.41912L10.056 1.24278C11.1578 1.63907 12.1238 2.3418 12.8391 3.26914L12.221 5.1693L10.26 5.80666L8.43671 4.48191L8.43673 2.41912ZM5.94417 1.24278L7.56342 2.41912V4.48187L5.7401 5.80661L3.7791 5.16926L3.16107 3.26909C3.87689 2.34177 4.84234 1.63911 5.94417 1.24278ZM2.95586 10.4495C2.29235 9.48405 1.92221 8.34697 1.88981 7.17631L3.50849 5.99996L5.47008 6.63732L6.16598 8.78084L4.95439 10.4496L2.95586 10.4495ZM9.72063 12.8659C8.59715 13.1951 7.40259 13.1951 6.27908 12.8659L5.66049 10.9624L6.87265 9.29422H9.12636L10.3385 10.963L9.72063 12.8659ZM11.0454 10.449L9.83435 8.78086L10.5308 6.63733L12.4924 5.99998L14.1105 7.17632C14.0781 8.34755 13.708 9.48403 13.0445 10.4495L11.0454 10.449Z';
+
 function EventIcon({ type }: { type: MatchEvent['type'] }) {
   if (type === 'yellow') return <span className="mt-0.5 block h-3.5 w-2.5 rounded-[2px] border border-white/60 bg-[#FFDF00]" />;
   if (type === 'red')    return <span className="mt-0.5 block h-3.5 w-2.5 rounded-[2px] border border-white/60 bg-[#E31B23]" />;
-  return <span className="text-[14px] font-semibold leading-[14px] text-white">⚽</span>;
+
+  const isOwnGoal  = type === 'own_goal';
+  const badge      = type === 'own_goal'        ? 'OG'
+                   : type === 'penalty' || type === 'penalty_missed' ? 'PEN'
+                   : type === 'var_goal' || type === 'var_cancelled' ? 'VAR'
+                   : null;
+  const isVAR      = type === 'var_goal' || type === 'var_cancelled';
+  const hasCross   = type === 'penalty_missed' || type === 'var_cancelled';
+
+  return (
+    <div className="relative flex shrink-0 flex-col items-center gap-[3px]">
+      <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
+        <circle cx="8" cy="7" r="6" fill="white" />
+        <path d={BALL_PATH} fill={isOwnGoal ? '#FB2C36' : 'black'} />
+      </svg>
+      {hasCross && (
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="none"
+          className="absolute"
+          style={{ right: -4, top: -2 }}
+        >
+          <rect width="8" height="8" rx="4" fill="#FB2C36" />
+          <path d="M6 2L2 6M2 2L6 6" stroke="#FEF2F2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+      {badge && (
+        <div
+          className="rounded-[2px] bg-black px-[3px] py-[2px]"
+          style={isVAR ? { outline: '0.5px solid white' } : undefined}
+        >
+          <span className="text-[7px] font-medium leading-[7px] tracking-[0.35px] text-white">{badge}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubIcon() {
+  return (
+    <div className="relative shrink-0" style={{ width: 20, height: 24 }}>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="absolute" style={{ left: 0, top: 0 }}>
+        <rect width="11.852" height="11.852" rx="5.926" fill="black" />
+        <path d="M5.926 2.469V9.383M2.963 5.432L5.926 2.469L8.889 5.432" stroke="#00D492" strokeWidth="1.111" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="absolute" style={{ left: 8, top: 3.5 }}>
+        <rect width="11.852" height="11.852" rx="5.926" fill="black" />
+        <path d="M5.926 2.469V9.383M2.963 6.42L5.926 9.383L8.889 6.42" stroke="#FF6467" strokeWidth="1.111" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
 }
 
 function MinutePill({ minute }: { minute: number }) {
+  const label = minute > 90 ? `90+${minute - 90}` : `${minute}`;
   return (
-    <span className="flex h-3 w-7 items-center justify-center rounded-full bg-white px-[5px] py-0.5 text-[10px] font-semibold leading-none text-black">
-      {minute}'
+    <span className="flex h-3 min-w-[28px] items-center justify-center rounded-full bg-white px-[5px] py-0.5 text-[10px] font-semibold leading-none text-black">
+      {label}
     </span>
   );
 }
