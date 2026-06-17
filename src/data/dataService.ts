@@ -200,20 +200,22 @@ async function loadFromSupabase(): Promise<void> {
   playerStatCache = [];
 
   const [
-    { data: groupsData,   error: e1 },
-    { data: venuesData,   error: e2 },
-    { data: teamsData,    error: e3 },
-    { data: playersData,  error: e4 },
-    { data: fixturesData, error: e5 },
-    { data: eventsData,   error: e6 },
-    { data: insightsData, error: e7 },
-    { data: standingsData, error: e8 },
+    { data: groupsData,      error: e1 },
+    { data: venuesData,      error: e2 },
+    { data: teamsData,       error: e3 },
+    { data: playersPage1,    error: e4a },
+    { data: playersPage2,    error: e4b },
+    { data: fixturesData,    error: e5 },
+    { data: eventsData,      error: e6 },
+    { data: insightsData,    error: e7 },
+    { data: standingsData,   error: e8 },
     { data: playerStatsData, error: e9 },
   ] = await Promise.all([
     supabase.from('groups').select('*'),
     supabase.from('venues').select('*'),
     supabase.from('teams').select('*'),
-    supabase.from('players').select('*').limit(3000),
+    supabase.from('players').select('*').range(0, 999),
+    supabase.from('players').select('*').range(1000, 2999),
     supabase.from('fixtures').select('*').order('kickoff_utc'),
     supabase.from('match_events').select(MATCH_EVENT_SELECT).order('minute'),
     supabase.from('insights').select('*').eq('is_published', true),
@@ -221,7 +223,9 @@ async function loadFromSupabase(): Promise<void> {
     supabase.from('player_stats').select('*'),
   ]);
 
-  if (e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9) {
+  const playersData = [...(playersPage1 ?? []), ...(playersPage2 ?? [])];
+
+  if (e1 || e2 || e3 || e4a || e4b || e5 || e6 || e7 || e8 || e9) {
     throw new Error('Supabase fetch failed');
   }
 
