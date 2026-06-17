@@ -104,7 +104,7 @@ export default function TeamPage() {
 
             <div className="flex w-full flex-col items-center gap-0.5 pt-6">
               <div className="flex w-full items-start gap-2">
-                <TeamMetaItem label="Seed" value={String(team.seed)} color={ink} ruleColor={dividerColor} />
+                <TeamMetaItem label="World ranking" value={String(team.seed)} color={ink} ruleColor={dividerColor} />
                 <TeamMetaItem label="Title odds" value={team.titleOdds} color={ink} ruleColor={dividerColor} />
               </div>
 
