@@ -758,7 +758,7 @@ function EventIcon({ type }: { type: MatchEvent['type'] }) {
       )}
       {badge && (
         <div
-          className="rounded-[2px] bg-black px-[3px] py-[2px]"
+          className="rounded-[2px] bg-black px-[3px] py-0"
           style={isVAR ? { outline: '0.5px solid white' } : undefined}
         >
           <span className="text-[7px] font-medium leading-[7px] tracking-[0.35px] text-white">{badge}</span>
