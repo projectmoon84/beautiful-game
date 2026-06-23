@@ -3,6 +3,7 @@ export type MatchTab = 'timeline' | 'lineups' | 'stats';
 export type MatchControlBarStatus =
   | { kind: 'upcoming'; date: string; time: string }
   | { kind: 'live'; minute: number }
+  | { kind: 'replaying'; minute: number }
   | { kind: 'finished' };
 
 interface Props {
@@ -74,6 +75,13 @@ function StatusCell({
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#5EE9B5]" />
           <span className="text-[10px] font-semibold leading-none text-white">
             {status.minute} min
+          </span>
+        </div>
+      ) : status.kind === 'replaying' ? (
+        <div className="flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1.5 pr-2 outline outline-1 outline-white/20">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60" />
+          <span className="text-[10px] font-semibold leading-none text-white/80">
+            {status.minute}'
           </span>
         </div>
       ) : status.kind === 'upcoming' ? (

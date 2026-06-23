@@ -7,6 +7,7 @@ import MatchControlBar, { type MatchTab, type MatchControlBarStatus } from '../c
 import MatchStats from '../components/MatchStats';
 import MatchLineups from '../components/MatchLineups';
 import { LIVE_DEMO_EVENTS, LIVE_DEMO_FIXTURE } from '../data/liveDemo';
+import { markFixtureSeen } from '../utils/seenFixtures';
 import { formatDate, formatTime } from '../utils/format';
 import { randomTeamFact } from '../utils/facts';
 import type { Fixture, GroupTableRow, MatchEvent, Team } from '../data/types';
@@ -19,10 +20,28 @@ import type { Fixture, GroupTableRow, MatchEvent, Team } from '../data/types';
 const CENTRE_SPOT_Y = 106;
 const SECTION_H = 212;
 
-// How long (ms) the event replay takes for matches that have event data.
-const PLAYBACK_MS = 15_000;
+// Each minute of match time maps to this many ms in the reveal timeline.
+const MS_PER_MINUTE = 150;
+const EVENT_BREATH_MS = 520;
+const GOAL_BREATH_MS = 1100;
+const TIMELINE_EASE = 'cubic-bezier(0.19,1,0.22,1)';
 
 type RevealPhase = 'enter' | 'rings' | 'colours' | 'score' | 'events' | 'done';
+
+function isTimelineEvent(event: MatchEvent): boolean {
+  return (
+    event.type === 'goal' ||
+    event.type === 'own_goal' ||
+    event.type === 'var_goal' ||
+    event.type === 'var_cancelled' ||
+    event.type === 'penalty' ||
+    event.type === 'penalty_missed' ||
+    event.type === 'yellow' ||
+    event.type === 'second_yellow' ||
+    event.type === 'red' ||
+    event.type === 'sub'
+  );
+}
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -36,6 +55,16 @@ export default function MatchPage() {
   const fixture = isLiveDemo ? LIVE_DEMO_FIXTURE : id ? dataService.fixture(id) : undefined;
   const home = fixture ? dataService.team(fixture.homeTeamId) : undefined;
   const away = fixture ? dataService.team(fixture.awayTeamId) : undefined;
+
+  // Mark fixture seen whenever we land on (or update) this page.
+  // For live matches this re-stamps the current score so the card re-obscures
+  // only when the score advances after the user has left the page.
+  useEffect(() => {
+    if (!fixture || isLiveDemo) return;
+    if (fixture.status === 'live' || fixture.status === 'finished') {
+      markFixtureSeen(fixture.id, fixture.homeScore ?? 0, fixture.awayScore ?? 0, fixture.status);
+    }
+  }, [fixture?.id, fixture?.homeScore, fixture?.awayScore, fixture?.status, isLiveDemo]);
 
   useEffect(() => {
     if (!fixture || isLiveDemo) return;
@@ -125,6 +154,25 @@ function MatchPageContent({
   // ── Tab state ──────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<MatchTab>('timeline');
 
+  // ── Reveal animation state ─────────────────────────────────────────────────
+  const [phase, setPhase] = useState<RevealPhase>('enter');
+  const [revealedCount, setRevealedCount] = useState(0);
+  const [replayMinute, setReplayMinute] = useState(0);
+  const [confettiItems, setConfettiItems] = useState<Array<{ key: string; colors: string[] }>>([]);
+  const revealTimerIdsRef = useRef<number[]>([]);
+
+  // Capture events once on mount — immune to live polling updates during replay.
+  // Events reveal proportionally to their match minute (MS_PER_MINUTE each),
+  // including substitutions so they sit in their real place on the timeline.
+  const playableRef = useRef<MatchEvent[]>(null!);
+  if (playableRef.current === null) {
+    playableRef.current = [...allEvents]
+      .filter(isTimelineEvent)
+      .sort((a, b) => a.minute - b.minute);
+  }
+  const playableEvents = playableRef.current;
+  const isDone = phase === 'done';
+
   const controlBarStatus = useMemo<MatchControlBarStatus>(() => {
     if (isLive) return { kind: 'live', minute: fixture.minute ?? 0 };
     if (isUpcoming) {
@@ -134,25 +182,9 @@ function MatchPageContent({
         time: formatTime(fixture.kickoffUtc),
       };
     }
+    if (phase === 'events') return { kind: 'replaying', minute: replayMinute };
     return { kind: 'finished' };
-  }, [isLive, isUpcoming, fixture.minute, fixture.kickoffUtc]);
-
-  // ── Reveal animation state ─────────────────────────────────────────────────
-  const [phase, setPhase] = useState<RevealPhase>('enter');
-  const [revealedCount, setRevealedCount] = useState(0);
-  const [confettiItems, setConfettiItems] = useState<Array<{ key: string; colors: string[] }>>([]);
-  const revealTimerIdsRef = useRef<number[]>([]);
-
-  // Capture the playable events exactly once on mount so the replay is a
-  // faithful 15-second recap, independent of live data updates that arrive later.
-  const playableRef = useRef<MatchEvent[]>(null!);
-  if (playableRef.current === null) {
-    playableRef.current = [...allEvents]
-      .filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'penalty' || e.type === 'yellow' || e.type === 'second_yellow' || e.type === 'red')
-      .sort((a, b) => a.minute - b.minute);
-  }
-  const playableEvents = playableRef.current;
-  const isDone = phase === 'done';
+  }, [isLive, isUpcoming, phase, replayMinute, fixture.minute, fixture.kickoffUtc]);
 
   const clearRevealTimers = useCallback(() => {
     revealTimerIdsRef.current.forEach(timerId => window.clearTimeout(timerId));
@@ -160,7 +192,7 @@ function MatchPageContent({
   }, []);
 
   const skipReveal = useCallback(() => {
-    if (!hasTimeline || playableEvents.length === 0 || isDone) return;
+    if (!hasTimeline || isDone) return;
     clearRevealTimers();
     setRevealedCount(playableEvents.length);
     setPhase('done');
@@ -176,23 +208,32 @@ function MatchPageContent({
   // ── FLIP: smooth push-down of bottom section when a new event appears ─────
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const flipBottom = (el: HTMLDivElement, offset: number, duration = 1050) => {
+    el.style.transition = 'none';
+    el.style.transform = `translateY(-${offset}px)`;
+    el.getBoundingClientRect();
+    el.style.transition = `transform ${duration}ms ${TIMELINE_EASE}`;
+    el.style.transform = '';
+  };
+
   useLayoutEffect(() => {
     if (revealedCount === 0) return;
     const el = bottomRef.current;
     if (!el) return;
-    // Approximate height of the newly inserted event row so we can pre-invert
-    // the bottom section and transition it back to its natural position.
     const newEvent = playableRef.current[revealedCount - 1];
     const rowH = newEvent?.assistPlayerId ? 58 : 46;
-    // Apply the displaced starting position with no transition.
-    el.style.transition = 'none';
-    el.style.transform = `translateY(-${rowH}px)`;
-    // getBoundingClientRect forces a synchronous layout flush so the browser
-    // commits the displaced state before we enable the transition.
-    el.getBoundingClientRect();
-    el.style.transition = 'transform 480ms cubic-bezier(0.16,1,0.3,1)';
-    el.style.transform = '';
+    flipBottom(el, rowH);
   }, [revealedCount]);
+
+  // Tick the replay minute counter while the events phase is running.
+  const lastEventMinute = playableEvents.length > 0 ? playableEvents[playableEvents.length - 1].minute : 90;
+  useEffect(() => {
+    if (phase !== 'events') return;
+    const interval = window.setInterval(() => {
+      setReplayMinute(m => Math.min(m + 1, lastEventMinute));
+    }, MS_PER_MINUTE);
+    return () => window.clearInterval(interval);
+  }, [phase, lastEventMinute]);
 
   useEffect(() => {
     const timers: number[] = [];
@@ -216,22 +257,30 @@ function MatchPageContent({
     }
 
     schedule(() => setPhase('events'), 1200);
-    const gap = PLAYBACK_MS / playableEvents.length;
 
+    const GOAL_TYPES = new Set<string>(['goal', 'own_goal', 'var_goal', 'penalty']);
+
+    let bonusMs = 0;
+    let lastFireTime = 1200;
     playableEvents.forEach((evt, i) => {
+      const fireAt = 1200 + evt.minute * MS_PER_MINUTE + bonusMs;
+      lastFireTime = fireAt;
       schedule(() => {
         setRevealedCount(i + 1);
-        if (evt.type === 'goal' || evt.type === 'own_goal' || evt.type === 'var_goal' || evt.type === 'penalty') {
+        if (GOAL_TYPES.has(evt.type)) {
           const team = evt.teamId === home.id ? home : away;
           setConfettiItems(prev => [
             ...prev,
             { key: `${evt.id}-${i}`, colors: [team.primaryHex, team.secondaryHex, '#ffffff'] },
           ]);
         }
-      }, 1200 + i * gap);
+      }, fireAt);
+      // Let each beat land; goals get a little extra theatre.
+      bonusMs += EVENT_BREATH_MS + (GOAL_TYPES.has(evt.type) ? GOAL_BREATH_MS : 0);
     });
 
-    schedule(() => setPhase('done'), 1200 + PLAYBACK_MS + 400);
+    // Catch our breath after the final timeline event before settling.
+    schedule(() => setPhase('done'), lastFireTime + 1800);
     return () => {
       timers.forEach(timerId => window.clearTimeout(timerId));
       revealTimerIdsRef.current = revealTimerIdsRef.current.filter(timerId => !timers.includes(timerId));
@@ -265,7 +314,7 @@ function MatchPageContent({
 
   // The timeline shows the events revealed so far; once done, use the live array.
   const shownEvents: MatchEvent[] = isDone
-    ? allEvents.filter(e => e.type === 'goal' || e.type === 'own_goal' || e.type === 'var_goal' || e.type === 'var_cancelled' || e.type === 'penalty' || e.type === 'penalty_missed' || e.type === 'yellow' || e.type === 'second_yellow' || e.type === 'red' || e.type === 'sub')
+    ? allEvents.filter(isTimelineEvent)
     : playableEvents.slice(0, revealedCount);
 
   return (
@@ -358,11 +407,13 @@ function MatchPageContent({
       </div>{/* end rings-clipped wrapper */}
 
       {/* ── Control bar ──────────────────────────────────────────────────────── */}
-      <MatchControlBar
-        activeTab={tab}
-        onTab={setTab}
-        status={controlBarStatus}
-      />
+      <div className="relative z-20">
+        <MatchControlBar
+          activeTab={tab}
+          onTab={setTab}
+          status={controlBarStatus}
+        />
+      </div>
 
       {/* ── Body — swaps with active tab ─────────────────────────────────────── */}
       {tab === 'timeline' && (
@@ -383,7 +434,7 @@ function MatchPageContent({
           )}
 
           {/* Info rows */}
-          <div ref={bottomRef} className={['relative z-20 mt-auto flex', shownEvents.length > 0 ? 'pt-20' : ''].join(' ')}>
+          <div ref={bottomRef} className="relative z-20 mt-auto flex pt-32">
             <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-4 pt-2" style={{ color: home.secondaryHex }}>
               {isUpcoming && venue && (
                 <InfoRow label="Venue" value={`${venue.stadium}, ${venue.city}`} color={home.secondaryHex} />
@@ -414,19 +465,23 @@ function MatchPageContent({
       )}
 
       {tab === 'stats' && (
-        <MatchStats
-          home={home}
-          away={away}
-          homeStats={isLiveDemo ? null : dataService.matchTeamStats(fixture.id, home.id)}
-          awayStats={isLiveDemo ? null : dataService.matchTeamStats(fixture.id, away.id)}
-        />
+        <div className="relative z-20">
+          <MatchStats
+            home={home}
+            away={away}
+            homeStats={isLiveDemo ? null : dataService.matchTeamStats(fixture.id, home.id)}
+            awayStats={isLiveDemo ? null : dataService.matchTeamStats(fixture.id, away.id)}
+          />
+        </div>
       )}
 
-      <GroupTable
-        label={`Group ${fixture.groupId}`}
-        rows={rows}
-        onTeamClick={teamId => navigate(`/team/${teamId}`)}
-      />
+      <div className="relative z-20">
+        <GroupTable
+          label={`Group ${fixture.groupId}`}
+          rows={rows}
+          onTeamClick={teamId => navigate(`/team/${teamId}`)}
+        />
+      </div>
 
       {isLive && <ShareResultBar onClick={() => setShareOpen(true)} />}
       {shareOpen && (
@@ -643,8 +698,48 @@ function EventTimeline({
   homeColor: string;
   awayColor: string;
 }) {
-  // Sort descending so newest sits at top
   const sorted = [...events].sort((a, b) => b.minute - a.minute);
+
+  // FLIP: track DOM positions of existing rows so we can slide them to their
+  // new positions whenever a new event or subs are inserted above them.
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const prevPositions = useRef(new Map<string, number>());
+  const prevLengthRef = useRef(events.length);
+  const previousIdsRef = useRef(new Set(events.map(event => event.id)));
+  const previousIds = previousIdsRef.current;
+
+  // Runs first after each render where the count increased — animates existing rows.
+  useLayoutEffect(() => {
+    if (events.length <= prevLengthRef.current) {
+      prevLengthRef.current = events.length;
+      return;
+    }
+    prevLengthRef.current = events.length;
+
+    rowRefs.current.forEach((el, id) => {
+      const prevY = prevPositions.current.get(id);
+      if (prevY === undefined || !el) return;
+      const delta = prevY - el.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) return;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${delta}px)`;
+      el.style.willChange = 'transform';
+      el.getBoundingClientRect();
+      el.style.transition = `transform 1400ms ${TIMELINE_EASE}`;
+      el.style.transform = '';
+      window.setTimeout(() => {
+        el.style.willChange = '';
+      }, 1450);
+    });
+  }, [events.length]);
+
+  // Runs second after every render — captures positions for the next FLIP.
+  useLayoutEffect(() => {
+    rowRefs.current.forEach((el, id) => {
+      if (el) prevPositions.current.set(id, el.getBoundingClientRect().top);
+    });
+    previousIdsRef.current = new Set(events.map(event => event.id));
+  });
 
   return (
     <div className="relative z-20 w-full py-2">
@@ -654,6 +749,11 @@ function EventTimeline({
           event={event}
           isHome={event.teamId === homeTeamId}
           color={event.teamId === homeTeamId ? homeColor : awayColor}
+          isNew={!previousIds.has(event.id)}
+          rowRef={el => {
+            if (el) rowRefs.current.set(event.id, el);
+            else rowRefs.current.delete(event.id);
+          }}
         />
       ))}
     </div>
@@ -661,11 +761,13 @@ function EventTimeline({
 }
 
 function TimelineEvent({
-  event, isHome, color,
+  event, isHome, color, isNew, rowRef,
 }: {
   event: MatchEvent;
   isHome: boolean;
   color: string;
+  isNew: boolean;
+  rowRef?: (el: HTMLDivElement | null) => void;
 }) {
   const player = dataService.player(event.playerId);
   const assist = event.assistPlayerId ? dataService.player(event.assistPlayerId) : undefined;
@@ -696,8 +798,11 @@ function TimelineEvent({
 
   return (
     <div
+      ref={rowRef}
       className="flex w-full items-start py-1"
-      style={{ animation: 'event-row-in 600ms cubic-bezier(0.16,1,0.3,1) both' }}
+      style={{
+        animation: isNew ? `event-row-in 1050ms ${TIMELINE_EASE} both` : undefined,
+      }}
     >
       {/* Left half — home events */}
       <div className="flex min-w-0 flex-1 items-start justify-end gap-4 pr-7">

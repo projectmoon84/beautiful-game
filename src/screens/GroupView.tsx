@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
+import { isFixtureObscured } from '../utils/seenFixtures';
 import GroupTable from '../components/GroupTable';
 import FixtureCard from '../components/FixtureCard';
 import SubTabs from '../components/SubTabs';
@@ -58,6 +59,7 @@ export default function GroupView() {
                   fixture={f}
                   homeTeam={home}
                   awayTeam={away}
+                  obscured={isFixtureObscured(f.id, f.status, f.homeScore ?? 0, f.awayScore ?? 0)}
                   onClick={() => navigate(`/match/${f.id}`)}
                 />
               );

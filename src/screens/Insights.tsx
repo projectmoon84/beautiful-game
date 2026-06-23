@@ -2,28 +2,21 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import {
+  ALL_TIME_AGE_AND_SPEED_RECORDS,
+  ALL_TIME_APPEARANCES,
   ALL_TIME_ASSISTS,
   ALL_TIME_GOALS,
-  ALL_TIME_INVOLVEMENTS,
-  MESSI_RONALDO,
-  RECORDS_AND_FIRSTS,
-  SINGLE_TOURNAMENT_ASSISTS,
-  SINGLE_TOURNAMENT_CLEAN_SHEETS,
-  SINGLE_TOURNAMENT_GOALS,
-  SINGLE_TOURNAMENT_INVOLVEMENTS,
   SINGLE_TOURNAMENT_RECORDS,
-  TEAM_TOURNAMENT_RECORDS,
+  type AllTimeRecordRow,
+  type AllTimeRecordTable,
   type WCRecord,
-  type WCRecordFact,
   type WCRankedRecord,
-  type WCTeamRecord,
 } from '../data/wcRecords';
-import type { PlayerStat, Team } from '../data/types';
+import type { Fixture, Player, PlayerStat, Team } from '../data/types';
 import { contrastRatio, readableOn } from '../theme/contrast';
 
 type InsightsView = '2026' | 'records';
 type LeaderboardMetric = 'goals' | 'assists';
-type HistoricMetric = 'goals' | 'assists' | 'involvements' | 'cleanSheets';
 
 interface LeaderRow {
   stat: PlayerStat;
@@ -39,28 +32,14 @@ interface InvolvementRow {
   total: number;
 }
 
-interface HistoricRow extends WCRankedRecord {
-  value: number;
-  delta?: number;
-}
-
-interface LiveDelta {
-  goals: number;
-  assists: number;
-  involvements: number;
-  matches: number;
-}
-
 const PAPER = '#F5F1E4';
-const LEADERBOARD_LIMIT = 8;
-const HISTORIC_LIMIT = 7;
-
-const PLAYER_ALIASES: Record<string, string[]> = {
-  'Lionel Messi': ['Lionel Messi', 'Messi'],
-  'Cristiano Ronaldo': ['Cristiano Ronaldo', 'Ronaldo'],
-  'Kylian Mbappe': ['Kylian Mbappe', 'Kylian Mbappé', 'Mbappe', 'Mbappé'],
-  'Thomas Muller': ['Thomas Muller', 'Thomas Müller'],
-  Pele: ['Pele', 'Pelé'],
+const LEADERBOARD_LIMIT = 10;
+const PLAYER_NAME_ALIASES: Record<string, string[]> = {
+  'cristiano ronaldo': ['Ronaldo'],
+  'kylian mbappe': ['Kylian Mbappé', 'Mbappé'],
+  'lionel messi': ['Messi'],
+  'pele': ['Pelé'],
+  'thomas muller': ['Thomas Müller', 'Müller'],
 };
 
 export default function Insights() {
@@ -71,7 +50,6 @@ export default function Insights() {
   const goals = useMemo(() => topRowsForMetric(stats, 'goals'), [stats]);
   const assists = useMemo(() => topRowsForMetric(stats, 'assists'), [stats]);
   const involvement = useMemo(() => topInvolvementRows(stats), [stats]);
-  const liveDeltas = useMemo(() => livePlayerDeltas(stats), [stats]);
 
   return (
     <div className="min-h-full bg-[var(--surface)] text-[var(--black)]">
@@ -86,12 +64,7 @@ export default function Insights() {
           onTeamClick={id => navigate(`/team/${id}`)}
         />
       ) : (
-        <RecordsView
-          liveDeltas={liveDeltas}
-          liveGoals={goals}
-          liveAssists={assists}
-          liveInvolvement={involvement}
-        />
+        <RecordsView stats={stats} />
       )}
     </div>
   );
@@ -102,29 +75,37 @@ export default function Insights() {
 function TournamentHero({ pulse }: { pulse: ReturnType<typeof tournamentPulse> }) {
   const hasLive = dataService.allFixtures().some(f => f.status === 'live');
   const gpm = pulse.matches > 0 ? (pulse.goals / pulse.matches).toFixed(2) : '—';
+  const [gpmWhole, gpmDec] = String(gpm).includes('.') ? String(gpm).split('.') : [String(gpm), undefined];
 
   return (
     <div className="bg-black text-white">
-      <div className="flex items-start justify-between px-5 pt-5 pb-4">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/30">FIFA World Cup</div>
-          <div className="text-[38px] font-bold uppercase leading-none tracking-tight">2026</div>
-        </div>
+      <div className="flex items-center gap-2 px-4 py-5">
+        <span className="flex-1 text-[24px] font-bold uppercase leading-none" style={{ color: PAPER }}>
+          FIFA World Cup 2026
+        </span>
         {hasLive && (
-          <div className="mt-1.5 flex items-center gap-1.5 rounded-full bg-[#5EE9B5]/15 px-3 py-1.5 ring-1 ring-[#5EE9B5]/40">
+          <div className="flex items-center gap-1.5 rounded-full bg-[#5EE9B5]/15 px-3 py-1.5 ring-1 ring-[#5EE9B5]/40">
             <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-[#5EE9B5]" />
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#5EE9B5]">Live</span>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-4 divide-x divide-white/10 border-t border-white/10">
-        <HeroCell label="Played" value={pulse.matches} />
-        <HeroCell label="Goals" value={pulse.goals} />
-        <HeroCell label="Per game" value={gpm} />
-        <div className="flex flex-col justify-end gap-2 p-4">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-white/30">Cards</div>
-          <div className="flex items-end gap-4">
+      <div className="flex border-t border-white/10 pb-2">
+        <HeroCell label="Matches" value={String(pulse.matches)} />
+        <HeroCell label="Goals" value={String(pulse.goals)} />
+        <div className="flex flex-1 flex-col gap-2 px-4 py-2">
+          <span className="text-[9px] font-medium uppercase tracking-[0.04em] text-white/50">Per game</span>
+          <div className="flex h-[39px] items-end">
+            <span className="font-bold leading-none">
+              <span className="text-[24px]">{gpmWhole}</span>
+              {gpmDec && <span className="text-[16px]">.{gpmDec}</span>}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-1 flex-col gap-2 px-4 py-2">
+          <span className="text-[9px] font-medium uppercase tracking-[0.04em] text-white/50">Cards</span>
+          <div className="flex h-[39px] items-end gap-3">
             <CardCount value={pulse.reds} color="#D20101" />
             <CardCount value={pulse.yellows} color="#FFDF00" />
           </div>
@@ -134,11 +115,13 @@ function TournamentHero({ pulse }: { pulse: ReturnType<typeof tournamentPulse> }
   );
 }
 
-function HeroCell({ label, value }: { label: string; value: number | string }) {
+function HeroCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col justify-end gap-2 p-4">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-white/30">{label}</div>
-      <div className="text-[40px] font-bold leading-none tabular-nums">{value}</div>
+    <div className="flex flex-1 flex-col gap-2 px-4 py-2">
+      <span className="text-[9px] font-medium uppercase tracking-[0.04em] text-white/50">{label}</span>
+      <div className="flex h-[39px] items-end">
+        <span className="text-[24px] font-bold leading-none tabular-nums">{value}</span>
+      </div>
     </div>
   );
 }
@@ -146,9 +129,9 @@ function HeroCell({ label, value }: { label: string; value: number | string }) {
 function CardCount({ value, color }: { value: number; color: string }) {
   return (
     <div className="relative flex items-end">
-      <div className="text-[36px] font-bold leading-none">{value}</div>
+      <span className="text-[24px] font-bold leading-none">{value}</span>
       <span
-        className="absolute -right-[10px] top-[4px] h-2 w-[6px] rounded-[2px]"
+        className="absolute -right-[8px] top-[5px] h-[7px] w-[5px] rounded-[1px]"
         style={{ background: color }}
       />
     </div>
@@ -170,8 +153,8 @@ function ViewToggle({ active, onChange }: { active: InsightsView; onChange: (v: 
             className={[
               'flex flex-1 items-center justify-center text-[13px] font-bold uppercase tracking-wider leading-none',
               isActive
-                ? 'bg-black text-[var(--surface)]'
-                : 'bg-[var(--surface)] text-black ring-[6px] ring-inset ring-black',
+                ? 'bg-[var(--surface)] text-black'
+                : 'bg-black text-[var(--surface)] ring-[6px] ring-inset ring-[var(--surface)]',
             ].join(' ')}
           >
             {v}
@@ -198,8 +181,7 @@ function NowView({
   return (
     <>
       <LiveLeaderboard
-        category="2026 World Cup"
-        title="Goal Scorers"
+        title="Goals"
         record={SINGLE_TOURNAMENT_RECORDS.goals}
         rows={goals}
         emptyLabel="No goals yet this tournament"
@@ -207,7 +189,6 @@ function NowView({
       />
 
       <LiveLeaderboard
-        category="2026 World Cup"
         title="Assists"
         record={SINGLE_TOURNAMENT_RECORDS.assists}
         rows={assists}
@@ -221,14 +202,12 @@ function NowView({
 }
 
 function LiveLeaderboard({
-  category,
   title,
   record,
   rows,
   emptyLabel,
   onTeamClick,
 }: {
-  category: string;
   title: string;
   record: WCRecord;
   rows: LeaderRow[];
@@ -237,32 +216,28 @@ function LiveLeaderboard({
 }) {
   return (
     <>
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">{category}</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">{title}</div>
-      </div>
-
-      <div className="flex items-center gap-3 border-b border-black/10 bg-[var(--surface)] px-5 py-3">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">Record</span>
-        <span className="text-[14px] font-semibold leading-none">
-          {record.flag} {record.player}
-          {record.year ? <span className="ml-1.5 font-normal opacity-50">{record.year}</span> : null}
-        </span>
-        <span className="ml-auto text-[26px] font-bold leading-none tabular-nums">{record.value}</span>
+      <div className="flex flex-col gap-4 px-4 pb-5 pt-5" style={{ background: PAPER }}>
+        <span className="text-[24px] font-bold uppercase leading-none text-black">{title}</span>
+        <div className="flex items-center gap-2 px-2 py-1.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+          <span className="text-[10px] font-medium uppercase tracking-[0.04em] text-black/40">Record</span>
+          <span className="text-[12px] font-medium leading-none text-black">
+            {record.flag} {record.player}
+          </span>
+          {record.year ? <span className="text-[12px] italic font-medium text-black/40">{record.year}</span> : null}
+          <span className="ml-auto text-[15px] font-bold leading-none tabular-nums text-black">{record.value}</span>
+        </div>
       </div>
 
       {rows.length > 0 ? (
-        rows.map((row, i) => (
+        rows.map(row => (
           <LiveRow
             key={row.stat.playerId}
             row={row}
-            rank={i + 1}
-            recordValue={record.value}
             onClick={() => onTeamClick(row.team.id)}
           />
         ))
       ) : (
-        <div className="flex h-[88px] items-center px-5 text-[13px] font-semibold text-black/35">
+        <div className="flex h-[76px] items-center px-4 text-[13px] font-semibold text-black/35" style={{ background: PAPER }}>
           {emptyLabel}
         </div>
       )}
@@ -270,77 +245,43 @@ function LiveLeaderboard({
   );
 }
 
-function LiveRow({
-  row,
-  rank,
-  recordValue,
-  onClick,
-}: {
-  row: LeaderRow;
-  rank: number;
-  recordValue: number;
-  onClick: () => void;
-}) {
+function LiveRow({ row, onClick }: { row: LeaderRow; onClick: () => void }) {
   const fg = rowTextColor(row.team);
   const hairline = needsHairline(row.team.primaryHex);
-  const pct = Math.min((row.value / recordValue) * 100, 100);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="relative flex h-[88px] w-full items-center gap-4 overflow-hidden px-5 text-left active:brightness-95"
+      className="flex h-[76px] w-full items-center gap-2 px-4 text-left active:brightness-95"
       style={{
         background: row.team.primaryHex,
         color: fg,
         boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
       }}
     >
-      <span className="w-5 text-[13px] font-bold leading-none tabular-nums" style={{ opacity: 0.45 }}>
-        {rank}
+      <span className="flex-1 truncate text-[15px] font-medium leading-none">
+        {row.team.flagEmoji} {row.stat.playerName}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[17px] font-bold leading-tight">
-          {row.team.flagEmoji} {row.stat.playerName}
-        </span>
-        <span className="block text-[12px] font-semibold leading-none mt-0.5" style={{ opacity: 0.55 }}>
-          {row.team.name}
-        </span>
-      </span>
-      <span className="text-[52px] font-bold leading-none tabular-nums">{row.value}</span>
-
-      {/* Progress bar toward record */}
-      <div className="absolute bottom-0 left-0 h-[3px] w-full" style={{ background: 'rgba(0,0,0,0.18)' }}>
-        <div className="h-full" style={{ width: `${pct}%`, background: fg, opacity: 0.5 }} />
-      </div>
+      <span className="text-[32px] font-bold leading-none tabular-nums">{row.value}</span>
     </button>
   );
 }
 
 function InvolvementBlock({ rows, onTeamClick }: { rows: InvolvementRow[]; onTeamClick: (id: string) => void }) {
+  const record = SINGLE_TOURNAMENT_RECORDS.involvement[0];
   return (
     <>
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">2026 World Cup</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">G+A Kings</div>
-      </div>
-
-      <div className="flex items-center justify-between border-b border-black/10 bg-[var(--surface)] px-5 py-3">
-        {SINGLE_TOURNAMENT_RECORDS.involvement.slice(0, 1).map(record => (
-          <div key={record.player} className="flex flex-1 items-center gap-3">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">Record</span>
-            <span className="text-[14px] font-semibold leading-none">
-              {record.flag} {record.player}
-              {record.year ? <span className="ml-1.5 font-normal opacity-50">{record.year}</span> : null}
-            </span>
-            <span className="ml-auto text-[26px] font-bold leading-none tabular-nums">{record.value}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-3 px-5 py-2 text-[11px] font-semibold text-black/40">
-        <LegendSwatch label="Goals" opacity={1} />
-        <LegendSwatch label="Assists" opacity={0.5} />
+      <div className="flex flex-col gap-4 px-4 pb-5 pt-5" style={{ background: PAPER }}>
+        <span className="text-[24px] font-bold uppercase leading-none text-black">Goal Involvement</span>
+        <div className="flex items-center gap-2 px-2 py-1.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+          <span className="text-[10px] font-medium uppercase tracking-[0.04em] text-black/40">Record</span>
+          <span className="text-[12px] font-medium leading-none text-black">
+            {record.flag} {record.player}
+          </span>
+          {record.year ? <span className="text-[12px] italic font-medium text-black/40">{record.year}</span> : null}
+          <span className="ml-auto text-[15px] font-bold leading-none tabular-nums text-black">{record.value}</span>
+        </div>
       </div>
 
       {rows.length > 0 ? (
@@ -352,7 +293,7 @@ function InvolvementBlock({ rows, onTeamClick }: { rows: InvolvementRow[]; onTea
           />
         ))
       ) : (
-        <div className="flex h-[88px] items-center px-5 text-[13px] font-semibold text-black/35">
+        <div className="flex h-[76px] items-center px-4 text-[13px] font-semibold text-black/35" style={{ background: PAPER }}>
           No goal involvements yet
         </div>
       )}
@@ -360,646 +301,290 @@ function InvolvementBlock({ rows, onTeamClick }: { rows: InvolvementRow[]; onTea
   );
 }
 
-function LegendSwatch({ label, opacity }: { label: string; opacity: number }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="inline-block h-3 w-3 rounded-[2px] bg-black" style={{ opacity }} />
-      {label}
-    </span>
-  );
-}
-
 function FullInvolvementRow({ row, onClick }: { row: InvolvementRow; onClick: () => void }) {
   const fg = rowTextColor(row.team);
   const hairline = needsHairline(row.team.primaryHex);
-  const assistsColor = hexToRgba(row.team.primaryHex, 0.52);
+  const isLightBg = needsHairline(row.team.primaryHex) || contrastRatio('#000000', row.team.primaryHex) > contrastRatio('#ffffff', row.team.primaryHex);
+  const pillBg = isLightBg ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.10)';
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full gap-0.5 text-left active:brightness-95"
-      style={{ color: fg }}
+      className="flex h-[76px] w-full items-center gap-2 px-4 text-left active:brightness-95"
+      style={{
+        background: row.team.primaryHex,
+        color: fg,
+        boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
+      }}
     >
-      {row.goals > 0 && (
-        <span
-          className="flex h-[88px] min-w-0 items-center gap-4 px-5"
-          style={{
-            flex: `${row.goals} 1 0`,
-            background: row.team.primaryHex,
-            boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
-          }}
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[17px] font-bold leading-tight">
-              {row.team.flagEmoji} {row.stat.playerName}
-            </span>
-            <span className="block text-[12px] font-semibold mt-0.5 opacity-55">{row.team.name}</span>
+      <span className="flex-1 truncate text-[15px] font-medium leading-none">
+        {row.team.flagEmoji} {row.stat.playerName}
+      </span>
+      <div className="flex items-center gap-8">
+        <div className="flex items-center gap-1 px-1 py-2" style={{ background: pillBg }}>
+          <span className="flex items-end gap-px">
+            <span className="text-[11px] font-bold leading-none">{row.goals}</span>
+            <span className="text-[10px] font-bold leading-none">G</span>
           </span>
-          <span className="text-[52px] font-bold leading-none tabular-nums">{row.goals}</span>
-        </span>
-      )}
-      {row.assists > 0 && (
-        <span
-          className="flex h-[88px] min-w-0 items-center justify-end px-5"
-          style={{
-            flex: `${row.assists} 1 0`,
-            background: assistsColor,
-            boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
-          }}
-        >
-          {row.goals === 0 && (
-            <span className="min-w-0 flex-1 mr-4">
-              <span className="block truncate text-[17px] font-bold leading-tight">
-                {row.team.flagEmoji} {row.stat.playerName}
-              </span>
-              <span className="block text-[12px] font-semibold mt-0.5 opacity-55">{row.team.name}</span>
-            </span>
-          )}
-          <span className="text-[52px] font-bold leading-none tabular-nums">{row.assists}</span>
-        </span>
-      )}
+          <span className="flex items-end gap-px">
+            <span className="text-[11px] font-bold leading-none">{row.assists}</span>
+            <span className="text-[10px] font-bold leading-none">A</span>
+          </span>
+        </div>
+        <span className="text-[32px] font-bold leading-none tabular-nums">{row.total}</span>
+      </div>
     </button>
   );
 }
 
 // ─── Records View ────────────────────────────────────────────────────────────
 
-function RecordsView({
-  liveDeltas,
-  liveGoals,
-  liveAssists,
-  liveInvolvement,
-}: {
-  liveDeltas: Map<string, LiveDelta>;
-  liveGoals: LeaderRow[];
-  liveAssists: LeaderRow[];
-  liveInvolvement: InvolvementRow[];
-}) {
-  const allTimeGoals = liveAwareRows(ALL_TIME_GOALS, 'goals', liveDeltas);
-  const allTimeAssists = liveAwareRows(ALL_TIME_ASSISTS, 'assists', liveDeltas);
-  const allTimeInvolvement = liveAwareRows(ALL_TIME_INVOLVEMENTS, 'involvements', liveDeltas);
-  const rivalryRows = liveAwareRivalryRows(liveDeltas);
+function RecordsView({ stats }: { stats: PlayerStat[] }) {
+  const tables = useMemo<AllTimeRecordTable[]>(() => [
+    liveRankedTable('goals', 'Goals', ALL_TIME_GOALS, row => row.goals ?? 0, row => liveDeltaFor(row, stats, 'goals')),
+    liveRankedTable('assists', 'Assists', ALL_TIME_ASSISTS, row => row.assists ?? 0, row => liveDeltaFor(row, stats, 'assists')),
+    liveRankedTable('appearances', 'Appearances', ALL_TIME_APPEARANCES, row => row.games ?? 0, row => currentAppearancesFor(row)),
+    ...liveAgeAndSpeedTables(),
+  ], [stats]);
 
   return (
-    <>
-      <ChaseSection
-        liveGoals={liveGoals}
-        liveAssists={liveAssists}
-        liveInvolvement={liveInvolvement}
-      />
-
-      <HallOfFame
-        title="All-time Goals"
-        caption="Career World Cup goals"
-        rows={allTimeGoals}
-        badge2026
-      />
-
-      <HallOfFame
-        title="All-time Assists"
-        caption="Recorded assists from 1966 · career totals"
-        rows={allTimeAssists}
-        badge2026
-      />
-
-      <HallOfFame
-        title="All-time Involvement"
-        caption="Career World Cup goals + assists combined"
-        rows={allTimeInvolvement}
-        badge2026
-      />
-
-      <SingleEditionSection />
-
-      <RivalrySection rows={rivalryRows} />
-
-      <FactsSection />
-    </>
-  );
-}
-
-// ─── Chase section ───────────────────────────────────────────────────────────
-
-function ChaseSection({
-  liveGoals,
-  liveAssists,
-  liveInvolvement,
-}: {
-  liveGoals: LeaderRow[];
-  liveAssists: LeaderRow[];
-  liveInvolvement: InvolvementRow[];
-}) {
-  const involvementAsLeader: LeaderRow[] = liveInvolvement.map(r => ({
-    stat: r.stat,
-    team: r.team,
-    value: r.total,
-  }));
-
-  return (
-    <>
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">2026 vs History</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">The Chase</div>
-        <div className="mt-1.5 text-[12px] font-semibold text-white/35">
-          How this tournament's leaders measure against all-time records
-        </div>
-      </div>
-
-      <ChaseBlock
-        label="Goals — record to beat"
-        record={SINGLE_TOURNAMENT_RECORDS.goals}
-        rows={liveGoals}
-        emptyLabel="No 2026 goals yet"
-      />
-      <ChaseBlock
-        label="Assists — record to beat"
-        record={SINGLE_TOURNAMENT_RECORDS.assists}
-        rows={liveAssists}
-        emptyLabel="No 2026 assists yet"
-      />
-      <ChaseBlock
-        label="Involvement — record to beat"
-        record={SINGLE_TOURNAMENT_RECORDS.involvement[0]}
-        rows={involvementAsLeader}
-        emptyLabel="No 2026 involvements yet"
-      />
-    </>
-  );
-}
-
-function ChaseBlock({
-  label,
-  record,
-  rows,
-  emptyLabel,
-}: {
-  label: string;
-  record: WCRecord;
-  rows: LeaderRow[];
-  emptyLabel: string;
-}) {
-  return (
-    <div className="border-b border-black/10 bg-[var(--surface)] pb-4">
-      <div className="flex items-center gap-2 px-5 pt-4 pb-3">
-        <div className="flex-1">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-black/35">{label}</div>
-          <div className="mt-0.5 text-[15px] font-bold leading-none">
-            {record.flag} {record.player}
-            <span className="ml-2 text-[13px] font-normal text-black/40">{record.year}</span>
-          </div>
-        </div>
-        <div className="text-[34px] font-bold leading-none tabular-nums">{record.value}</div>
-      </div>
-
-      {rows.length > 0 ? (
-        <div className="flex flex-col gap-2 px-5">
-          {rows.slice(0, 4).map(row => (
-            <ChaseProgressRow key={row.stat.playerId} row={row} recordValue={record.value} />
-          ))}
-        </div>
-      ) : (
-        <div className="px-5 text-[13px] font-semibold text-black/35">{emptyLabel}</div>
-      )}
+    <div style={{ background: PAPER }}>
+      {tables.map(table => (
+        <RecordTable key={table.id} table={table} />
+      ))}
     </div>
   );
 }
 
-function ChaseProgressRow({ row, recordValue }: { row: LeaderRow; recordValue: number }) {
-  const pct = Math.min((row.value / recordValue) * 100, 100);
-  const fg = rowTextColor(row.team);
-  const hairline = needsHairline(row.team.primaryHex);
-
+function RecordTable({ table }: { table: AllTimeRecordTable }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex w-[130px] shrink-0 items-center gap-2">
-        <span className="text-[14px] leading-none">{row.team.flagEmoji}</span>
-        <span className="truncate text-[13px] font-semibold">{row.stat.playerName}</span>
+    <section>
+      <div className="flex flex-col gap-4 px-4 pb-5 pt-5" style={{ background: PAPER }}>
+        <span className="text-[24px] font-bold uppercase leading-none text-black">{table.title}</span>
       </div>
-      <div className="relative h-[28px] flex-1 overflow-hidden rounded-[4px] bg-black/8">
-        <div
-          className="absolute inset-y-0 left-0 flex items-center justify-end rounded-[4px] px-2"
-          style={{
-            width: `${Math.max(pct, 8)}%`,
-            background: row.team.primaryHex,
-            color: fg,
-            boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
-          }}
-        >
-          <span className="text-[13px] font-bold tabular-nums">{row.value}</span>
-        </div>
-        <div
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-black/25"
-        >
-          /{recordValue}
-        </div>
-      </div>
-    </div>
+
+      {table.rows.map(row => (
+        <AllTimeRecordRowView key={`${table.id}-${row.rank}-${row.player}`} row={row} />
+      ))}
+    </section>
   );
 }
 
-// ─── Hall of Fame ─────────────────────────────────────────────────────────────
-
-function HallOfFame({
-  title,
-  caption,
-  rows,
-  badge2026,
-}: {
-  title: string;
-  caption: string;
-  rows: HistoricRow[];
-  badge2026?: boolean;
-}) {
-  const valueMax = rows[0]?.value ?? 1;
+function AllTimeRecordRowView({ row }: { row: AllTimeRecordRow }) {
+  const team = row.isCurrent ? teamForCountry(row.country) : undefined;
+  const isNewRecord = Boolean(row.isNewRecord);
+  const bg = team?.primaryHex ?? '#1C1917';
+  const fg = team ? rowTextColor(team) : '#FFFFFF';
+  const detailColor = team ? withAlpha(fg, 0.58) : 'rgba(255,255,255,0.40)';
+  const valueColor = fg;
+  const hairline = team ? needsHairline(team.primaryHex) : false;
 
   return (
-    <>
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Hall of Fame</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">{title}</div>
-        <div className="mt-1 text-[12px] font-semibold text-white/35">{caption}</div>
-        {badge2026 && (
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#5EE9B5]" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#5EE9B5]">2026 additions shown</span>
-          </div>
-        )}
-      </div>
-
-      <div>
-        {rows.slice(0, HISTORIC_LIMIT).map((row, i) => (
-          <HallOfFameRow key={`${row.player}-${row.country}`} row={row} rank={i + 1} valueMax={valueMax} />
-        ))}
-      </div>
-    </>
-  );
-}
-
-function HallOfFameRow({
-  row,
-  rank,
-  valueMax,
-}: {
-  row: HistoricRow;
-  rank: number;
-  valueMax: number;
-}) {
-  const pct = (row.value / valueMax) * 100;
-
-  return (
-    <div className="relative flex h-[72px] w-full items-center gap-4 overflow-hidden border-b border-white/5 bg-[#111] px-5 text-white">
-      {/* Subtle fill bar */}
-      <div
-        className="absolute inset-y-0 left-0 bg-white/[0.04]"
-        style={{ width: `${pct}%` }}
-      />
-
-      {/* Rank */}
-      <span className="relative w-8 shrink-0 text-[26px] font-bold leading-none tabular-nums text-white/12">
-        {String(rank).padStart(2, '0')}
+    <div
+      className="flex h-[76px] w-full items-center gap-2 px-4"
+      style={{
+        background: bg,
+        color: fg,
+        boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
+      }}
+    >
+      <span className="min-w-0 flex-1 truncate text-[15px] font-medium leading-none">
+        {flagForCountry(row.country)} {shortPlayerName(row.player)}
       </span>
-
-      {/* Player info */}
-      <div className="relative min-w-0 flex-1">
-        <div className="truncate text-[16px] font-bold leading-tight">{row.player}</div>
-        <div className="truncate text-[11px] font-semibold leading-none text-white/40">
-          {row.country}
-          {row.editions ? ` · ${row.editions}` : ''}
-          {row.year ? ` · ${row.year}` : ''}
-          {row.games ? ` · ${row.games} games` : ''}
-        </div>
-      </div>
-
-      {/* Live badge */}
-      {row.delta ? (
-        <span className="relative shrink-0 rounded-[3px] bg-[#F5F1E4] px-1.5 py-1 text-[10px] font-bold leading-none text-black">
-          +{row.delta}
+      {row.detail ? (
+        <span
+          className="hidden shrink-0 text-right text-[12px] font-medium italic leading-none min-[380px]:block"
+          style={{ color: detailColor }}
+        >
+          {row.detail}
         </span>
       ) : null}
-
-      {/* Value */}
-      <span className="relative shrink-0 text-[38px] font-bold leading-none tabular-nums">{row.value}</span>
-    </div>
-  );
-}
-
-// ─── Single edition ───────────────────────────────────────────────────────────
-
-function SingleEditionSection() {
-  const stGoalLeader = Math.max(...SINGLE_TOURNAMENT_GOALS.map(r => r.goals ?? 0), 1);
-  const stAssistLeader = Math.max(...SINGLE_TOURNAMENT_ASSISTS.map(r => r.assists ?? 0), 1);
-  const stCSLeader = Math.max(...SINGLE_TOURNAMENT_CLEAN_SHEETS.map(r => r.cleanSheets ?? 0), 1);
-  const stInvLeader = Math.max(...SINGLE_TOURNAMENT_INVOLVEMENTS.map(r => r.involvements ?? 0), 1);
-
-  return (
-    <>
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Greatest single editions</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">One Tournament</div>
-        <div className="mt-1 text-[12px] font-semibold text-white/35">
-          Best individual performances at a single World Cup
-        </div>
-      </div>
-
-      <SingleEditionCategory label="Goals">
-        {SINGLE_TOURNAMENT_GOALS.slice(0, 6).map(row => (
-          <SingleEditionRow
-            key={`${row.player}-${row.year}`}
-            player={row.player}
-            country={row.country}
-            year={row.year}
-            value={row.goals ?? 0}
-            maxValue={stGoalLeader}
-          />
-        ))}
-      </SingleEditionCategory>
-
-      <SingleEditionCategory label="G+A combined">
-        {SINGLE_TOURNAMENT_INVOLVEMENTS.slice(0, 6).map(row => {
-          const goals = row.goals ?? 0;
-          const assists = row.assists ?? 0;
-          return (
-            <SingleEditionSplitRow
-              key={`${row.player}-${row.year}`}
-              player={row.player}
-              country={row.country}
-              year={row.year}
-              goals={goals}
-              assists={assists}
-              total={row.involvements ?? goals + assists}
-              maxTotal={stInvLeader}
-            />
-          );
-        })}
-      </SingleEditionCategory>
-
-      <SingleEditionCategory label="Assists">
-        {SINGLE_TOURNAMENT_ASSISTS.slice(0, 6).map(row => (
-          <SingleEditionRow
-            key={`${row.player}-${row.year}`}
-            player={row.player}
-            country={row.country}
-            year={row.year}
-            value={row.assists ?? 0}
-            maxValue={stAssistLeader}
-          />
-        ))}
-      </SingleEditionCategory>
-
-      <SingleEditionCategory label="Clean sheets (GK)">
-        {SINGLE_TOURNAMENT_CLEAN_SHEETS.slice(0, 6).map(row => (
-          <SingleEditionRow
-            key={`${row.player}-${row.year}`}
-            player={row.player}
-            country={row.country}
-            year={row.year}
-            value={row.cleanSheets ?? 0}
-            maxValue={stCSLeader}
-            suffix={row.games ? `in ${row.games} games` : undefined}
-          />
-        ))}
-      </SingleEditionCategory>
-    </>
-  );
-}
-
-function SingleEditionCategory({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="border-b border-black/10 bg-[var(--surface)] pb-1">
-      <div className="px-5 pt-4 pb-2 text-[11px] font-bold uppercase tracking-widest text-black/35">{label}</div>
-      {children}
-    </div>
-  );
-}
-
-function SingleEditionRow({
-  player,
-  country,
-  year,
-  value,
-  maxValue,
-  suffix,
-}: {
-  player: string;
-  country: string;
-  year?: number;
-  value: number;
-  maxValue: number;
-  suffix?: string;
-}) {
-  const pct = (value / maxValue) * 100;
-
-  return (
-    <div className="flex items-center gap-3 px-5 py-2">
-      <div className="min-w-0 flex-1">
-        <span className="text-[14px] font-bold leading-none">{player}</span>
-        <span className="ml-2 text-[12px] font-medium text-black/40">
-          {country}{year ? ` · ${year}` : ''}{suffix ? ` · ${suffix}` : ''}
+      {row.currentDelta ? (
+        <span
+          className="shrink-0 text-[11px] font-bold leading-none"
+          style={{ color: detailColor }}
+        >
+          +{row.currentDelta}
         </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="h-[6px] w-[64px] overflow-hidden rounded-full bg-black/10">
-          <div className="h-full rounded-full bg-black/60" style={{ width: `${pct}%` }} />
-        </div>
-        <span className="w-5 text-right text-[18px] font-bold leading-none tabular-nums">{value}</span>
-      </div>
-    </div>
-  );
-}
-
-function SingleEditionSplitRow({
-  player,
-  country,
-  year,
-  goals,
-  assists,
-  total,
-  maxTotal,
-}: {
-  player: string;
-  country: string;
-  year?: number;
-  goals: number;
-  assists: number;
-  total: number;
-  maxTotal: number;
-}) {
-  const pct = (total / maxTotal) * 100;
-  const goalPct = total > 0 ? (goals / total) * 100 : 0;
-
-  return (
-    <div className="flex items-center gap-3 px-5 py-2">
-      <div className="min-w-0 flex-1">
-        <span className="text-[14px] font-bold leading-none">{player}</span>
-        <span className="ml-2 text-[12px] font-medium text-black/40">
-          {country}{year ? ` · ${year}` : ''} · {goals}G {assists}A
+      ) : null}
+      {isNewRecord ? (
+        <span className="shrink-0 text-[12px] leading-none" aria-label="New record">
+          🏅
         </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="flex h-[6px] w-[64px] overflow-hidden rounded-full bg-black/10">
-          <div className="h-full bg-black" style={{ width: `${pct * (goalPct / 100)}%` }} />
-          <div className="h-full bg-black/40" style={{ width: `${pct * ((100 - goalPct) / 100)}%` }} />
-        </div>
-        <span className="w-5 text-right text-[18px] font-bold leading-none tabular-nums">{total}</span>
-      </div>
-    </div>
-  );
-}
-
-// ─── Rivalry ──────────────────────────────────────────────────────────────────
-
-function RivalrySection({
-  rows,
-}: {
-  rows: Array<{ label: string; left: number; right: number; leftDelta?: number; rightDelta?: number }>;
-}) {
-  return (
-    <>
-      {/* National colour header */}
-      <div className="flex h-[80px]">
-        <div
-          className="flex flex-1 items-center justify-end px-5"
-          style={{ background: MESSI_RONALDO.left.hex }}
-        >
-          <div className="text-right text-white">
-            <div className="text-[11px] font-bold uppercase leading-none opacity-60">{MESSI_RONALDO.left.flag} Argentina</div>
-            <div className="text-[22px] font-bold uppercase leading-tight tracking-tight">{MESSI_RONALDO.left.name}</div>
-          </div>
-        </div>
-        <div
-          className="flex flex-1 items-center justify-start px-5"
-          style={{ background: MESSI_RONALDO.right.hex }}
-        >
-          <div className="text-white">
-            <div className="text-[11px] font-bold uppercase leading-none opacity-60">{MESSI_RONALDO.right.flag} Portugal</div>
-            <div className="text-[22px] font-bold uppercase leading-tight tracking-tight">{MESSI_RONALDO.right.name}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="border-b border-black/10 bg-[var(--surface)] px-5 py-2.5">
-        <p className="text-[11px] font-semibold text-black/35">
-          World Cup only · 2026 additions reflected where player matched
-        </p>
-      </div>
-
-      <div className="flex flex-col">
-        {rows.map(row => (
-          <DivergingRow
-            key={row.label}
-            label={row.label}
-            left={row.left}
-            right={row.right}
-            leftDelta={row.leftDelta}
-            rightDelta={row.rightDelta}
-          />
-        ))}
-      </div>
-    </>
-  );
-}
-
-function DivergingRow({
-  label,
-  left,
-  right,
-  leftDelta,
-  rightDelta,
-}: {
-  label: string;
-  left: number;
-  right: number;
-  leftDelta?: number;
-  rightDelta?: number;
-}) {
-  const max = Math.max(left, right, 1);
-
-  return (
-    <div className="relative flex items-stretch">
-      <div className="flex flex-1 justify-end">
-        <div
-          className="flex h-[60px] items-center gap-1 px-3.5 text-[26px] font-bold leading-none text-white"
-          style={{ width: `${(left / max) * 100}%`, background: MESSI_RONALDO.left.hex }}
-        >
-          {left}
-          {leftDelta ? <span className="text-[11px] font-semibold leading-none opacity-75">+{leftDelta}</span> : null}
-        </div>
-      </div>
-      <div className="flex flex-1 justify-start">
-        <div
-          className="flex h-[60px] items-center justify-end gap-1 px-3.5 text-[26px] font-bold leading-none text-white"
-          style={{ width: `${(right / max) * 100}%`, background: MESSI_RONALDO.right.hex }}
-        >
-          {rightDelta ? <span className="text-[11px] font-semibold leading-none opacity-75">+{rightDelta}</span> : null}
-          {right}
-        </div>
-      </div>
-      <div className="absolute left-1/2 top-1/2 max-w-[46%] -translate-x-1/2 -translate-y-1/2 truncate rounded-[3px] bg-[var(--surface)] px-[9px] py-[5px] text-[11px] font-bold leading-none">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-// ─── Facts ────────────────────────────────────────────────────────────────────
-
-function FactsSection() {
-  return (
-    <>
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">World Cup history</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">Records & Firsts</div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2">
-        {RECORDS_AND_FIRSTS.map(fact => (
-          <FactCard key={`${fact.record}-${fact.holder}`} fact={fact} />
-        ))}
-      </div>
-
-      <div className="bg-black px-5 pt-5 pb-4 text-white">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">World Cup history</div>
-        <div className="text-[28px] font-bold uppercase leading-none tracking-tight">Team Records</div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2">
-        {TEAM_TOURNAMENT_RECORDS.map(record => (
-          <TeamRecordCard key={`${record.record}-${record.detail}`} record={record} />
-        ))}
-      </div>
-    </>
-  );
-}
-
-function FactCard({ fact }: { fact: WCRecordFact }) {
-  return (
-    <div className="min-h-[96px] border-b border-black/10 bg-[var(--surface)] px-5 py-4">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-black/35">{fact.record}</div>
-      <div className="mt-2 text-[26px] font-bold leading-none">{fact.figure}</div>
-      <div className="mt-1.5 text-[12px] font-semibold leading-tight text-black/50">
-        {fact.holder}
-        {fact.country ? ` · ${fact.country}` : ''}
-        {fact.detail ? ` · ${fact.detail}` : ''}
-      </div>
-    </div>
-  );
-}
-
-function TeamRecordCard({ record }: { record: WCTeamRecord }) {
-  return (
-    <div className="min-h-[96px] border-b border-white/5 bg-[#111] px-5 py-4 text-white">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-white/30">{record.record}</div>
-      <div className="mt-2 text-[26px] font-bold leading-none">{record.figure}</div>
-      <div className="mt-1.5 text-[12px] font-semibold leading-tight text-white/50">
-        {record.detail}
-        {record.year ? ` · ${record.year}` : ''}
-      </div>
+      ) : null}
+      <span
+        className="shrink-0 text-right text-[32px] font-bold leading-none tabular-nums"
+        style={{ color: valueColor }}
+      >
+        {row.value}
+      </span>
     </div>
   );
 }
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
+
+function liveRankedTable(
+  id: string,
+  title: string,
+  rows: WCRankedRecord[],
+  baseValueFor: (row: WCRankedRecord) => number,
+  currentDeltaFor: (row: WCRankedRecord) => number,
+): AllTimeRecordTable {
+  const baseLeader = Math.max(...rows.map(baseValueFor), 0);
+  const liveRows = rows
+    .map(row => {
+      const baseValue = baseValueFor(row);
+      const currentDelta = currentDeltaFor(row);
+      const value = baseValue + currentDelta;
+      return {
+        rank: row.rank,
+        player: row.player,
+        country: row.country,
+        value: String(value),
+        detail: row.editions ?? (row.year ? String(row.year) : undefined),
+        currentDelta: currentDelta > 0 ? String(currentDelta) : undefined,
+        isCurrent: currentDelta > 0 || Boolean(matchedCurrentPlayer(row.player, row.country)),
+        isNewRecord: currentDelta > 0 && value >= baseLeader,
+        sortValue: value,
+      };
+    })
+    .sort((a, b) => b.sortValue - a.sortValue || a.player.localeCompare(b.player))
+    .slice(0, 10)
+    .map(({ sortValue: _sortValue, ...row }) => row);
+
+  return {
+    id,
+    title,
+    rows: liveRows,
+  };
+}
+
+function liveAgeAndSpeedTables(): AllTimeRecordTable[] {
+  return ALL_TIME_AGE_AND_SPEED_RECORDS.map(table => {
+    const currentRows = currentRowsForRecordTable(table.id);
+    if (currentRows.length === 0) return table;
+
+    const comparator = recordComparator(table.id);
+    const baseLeader = table.rows[0]?.value;
+    const merged = [...table.rows, ...currentRows]
+      .sort(comparator)
+      .slice(0, 10)
+      .map((row, index) => ({
+        ...row,
+        rank: index + 1,
+        isNewRecord: row.isCurrent && index === 0 && baseLeader ? comparator(row, { ...row, value: baseLeader }) <= 0 : row.isNewRecord,
+      }));
+
+    return { ...table, rows: merged };
+  });
+}
+
+function liveDeltaFor(row: WCRankedRecord, stats: PlayerStat[], metric: LeaderboardMetric): number {
+  const player = matchedCurrentPlayer(row.player, row.country);
+  if (!player) return 0;
+  const stat = stats.find(s => s.playerId === player.id || (s.teamId === player.teamId && samePlayerName(s.playerName, row.player)));
+  return stat?.[metric] ?? 0;
+}
+
+function currentAppearancesFor(row: WCRankedRecord): number {
+  const player = matchedCurrentPlayer(row.player, row.country);
+  if (!player) return 0;
+
+  const fixtures = playedFixturesForTeam(player.teamId);
+  const lineupAppearances = fixtures.filter(fixture => {
+    const lineup = dataService.matchLineup(fixture.id, player.teamId);
+    return lineup?.players.some(slot => slot.playerId === player.id || samePlayerName(slot.playerName, player.name));
+  }).length;
+
+  return lineupAppearances > 0 ? lineupAppearances : fixtures.length;
+}
+
+function currentRowsForRecordTable(tableId: string): AllTimeRecordRow[] {
+  if (tableId === 'youngest-player') return currentAgeRows('youngest-player');
+  if (tableId === 'oldest-player') return currentAgeRows('oldest-player');
+  if (tableId === 'youngest-to-score') return currentScoringAgeRows('youngest-to-score');
+  if (tableId === 'oldest-to-score') return currentScoringAgeRows('oldest-to-score');
+  if (tableId === 'fastest-goal') return currentFastestGoalRows();
+  return [];
+}
+
+function currentAgeRows(kind: 'youngest-player' | 'oldest-player'): AllTimeRecordRow[] {
+  const rows = new Map<string, AllTimeRecordRow & { ageDays: number }>();
+  for (const fixture of playedFixtures()) {
+    for (const teamId of [fixture.homeTeamId, fixture.awayTeamId]) {
+      const lineup = dataService.matchLineup(fixture.id, teamId);
+      const players = lineup?.players
+        .map(slot => dataService.player(slot.playerId))
+        .filter((player): player is Player => Boolean(player?.dateOfBirth)) ?? [];
+
+      for (const player of players) {
+        const age = ageAt(player.dateOfBirth!, fixture.kickoffUtc);
+        const existing = rows.get(player.id);
+        const shouldReplace = !existing || (kind === 'youngest-player' ? age.totalDays < existing.ageDays : age.totalDays > existing.ageDays);
+        if (!shouldReplace) continue;
+        rows.set(player.id, {
+          rank: 0,
+          player: player.name,
+          country: teamCountryName(player.teamId),
+          value: age.label,
+          detail: '2026',
+          isCurrent: true,
+          ageDays: age.totalDays,
+        });
+      }
+    }
+  }
+
+  return [...rows.values()].map(({ ageDays: _ageDays, ...row }) => row);
+}
+
+function currentScoringAgeRows(kind: 'youngest-to-score' | 'oldest-to-score'): AllTimeRecordRow[] {
+  const rows = new Map<string, AllTimeRecordRow & { ageDays: number }>();
+  for (const fixture of playedFixtures()) {
+    for (const event of dataService.matchEvents(fixture.id)) {
+      if (event.type !== 'goal' && event.type !== 'penalty') continue;
+      const player = dataService.player(event.playerId);
+      if (!player?.dateOfBirth) continue;
+      const age = ageAt(player.dateOfBirth, fixture.kickoffUtc);
+      const existing = rows.get(player.id);
+      const shouldReplace = !existing || (kind === 'youngest-to-score' ? age.totalDays < existing.ageDays : age.totalDays > existing.ageDays);
+      if (!shouldReplace) continue;
+      rows.set(player.id, {
+        rank: 0,
+        player: player.name,
+        country: teamCountryName(player.teamId),
+        value: age.label,
+        detail: `v ${opponentShortCode(fixture, player.teamId)}, 2026`,
+        isCurrent: true,
+        ageDays: age.totalDays,
+      });
+    }
+  }
+
+  return [...rows.values()].map(({ ageDays: _ageDays, ...row }) => row);
+}
+
+function currentFastestGoalRows(): AllTimeRecordRow[] {
+  const rows: AllTimeRecordRow[] = [];
+  for (const fixture of playedFixtures()) {
+    for (const event of dataService.matchEvents(fixture.id)) {
+      if (event.type !== 'goal' && event.type !== 'penalty') continue;
+      const player = dataService.player(event.playerId);
+      if (!player) continue;
+      rows.push({
+        rank: 0,
+        player: player.name,
+        country: teamCountryName(player.teamId),
+        value: `${event.minute}'`,
+        detail: `v ${opponentShortCode(fixture, player.teamId)}, 2026`,
+        isCurrent: true,
+      });
+    }
+  }
+  return rows;
+}
 
 function topRowsForMetric(stats: PlayerStat[], metric: LeaderboardMetric): LeaderRow[] {
   return stats
@@ -1046,100 +631,6 @@ function tournamentPulse(stats: PlayerStat[]) {
   };
 }
 
-function livePlayerDeltas(stats: PlayerStat[]): Map<string, LiveDelta> {
-  const deltas = new Map<string, LiveDelta>();
-  for (const stat of stats) {
-    const historicName = historicPlayerName(stat.playerName);
-    if (!historicName) continue;
-    const teamMatches = dataService
-      .allFixtures()
-      .filter(
-        f =>
-          (f.status === 'live' || f.status === 'finished') &&
-          (f.homeTeamId === stat.teamId || f.awayTeamId === stat.teamId),
-      ).length;
-    deltas.set(historicName, {
-      goals: stat.goals,
-      assists: stat.assists,
-      involvements: stat.goals + stat.assists,
-      matches: teamMatches,
-    });
-  }
-  return deltas;
-}
-
-function historicPlayerName(playerName: string): string | undefined {
-  const normalized = normalizeName(playerName);
-  return Object.entries(PLAYER_ALIASES).find(([, aliases]) =>
-    aliases.some(alias => normalizeName(alias) === normalized),
-  )?.[0];
-}
-
-function liveAwareRows(
-  rows: WCRankedRecord[],
-  metric: HistoricMetric,
-  deltas: Map<string, LiveDelta>,
-): HistoricRow[] {
-  return historicRows(rows, metric)
-    .map(row => {
-      const delta = deltas.get(row.player)?.[metric === 'cleanSheets' ? 'goals' : metric] ?? 0;
-      return {
-        ...row,
-        value: row.value + delta,
-        delta: delta > 0 ? delta : undefined,
-      };
-    })
-    .sort((a, b) => b.value - a.value || a.player.localeCompare(b.player));
-}
-
-function historicRows(rows: WCRankedRecord[], metric: HistoricMetric): HistoricRow[] {
-  return rows
-    .map(row => ({ ...row, value: metricValue(row, metric) }))
-    .filter(row => Number.isFinite(row.value) && row.value > 0)
-    .sort((a, b) => b.value - a.value || a.player.localeCompare(b.player));
-}
-
-function metricValue(row: WCRankedRecord, metric: HistoricMetric): number {
-  if (metric === 'involvements') return row.involvements ?? (row.goals ?? 0) + (row.assists ?? 0);
-  if (metric === 'cleanSheets') return row.cleanSheets ?? 0;
-  return row[metric] ?? 0;
-}
-
-function liveAwareRivalryRows(deltas: Map<string, LiveDelta>) {
-  const messiDelta = deltas.get(MESSI_RONALDO.left.fullName);
-  const ronaldoDelta = deltas.get(MESSI_RONALDO.right.fullName);
-
-  return MESSI_RONALDO.rows.map(row => {
-    const leftDelta = rivalryDelta(row.key, messiDelta);
-    const rightDelta = rivalryDelta(row.key, ronaldoDelta);
-    return {
-      label: row.label,
-      left: row.l + leftDelta,
-      right: row.r + rightDelta,
-      leftDelta: leftDelta > 0 ? leftDelta : undefined,
-      rightDelta: rightDelta > 0 ? rightDelta : undefined,
-    };
-  });
-}
-
-function rivalryDelta(key: string, delta?: LiveDelta): number {
-  if (!delta) return 0;
-  if (key === 'goals') return delta.goals;
-  if (key === 'assists') return delta.assists;
-  if (key === 'involvements') return delta.involvements;
-  if (key === 'matches') return delta.matches;
-  return 0;
-}
-
-function normalizeName(name: string): string {
-  return name
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
 function rowTextColor(team: Team): string {
   const readable = readableOn(team.primaryHex);
   const secondary = team.secondaryHex;
@@ -1150,10 +641,161 @@ function needsHairline(hex: string): boolean {
   return contrastRatio(hex, PAPER) < 1.3;
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const n = hex.replace('#', '');
-  const r = parseInt(n.slice(0, 2), 16);
-  const g = parseInt(n.slice(2, 4), 16);
-  const b = parseInt(n.slice(4, 6), 16);
+function matchedCurrentPlayer(playerName: string, country: string): Player | undefined {
+  const team = teamForCountry(country);
+  if (!team) return undefined;
+  return dataService.squad(team.id).find(player => samePlayerName(player.name, playerName));
+}
+
+function samePlayerName(currentName: string, historicName: string): boolean {
+  const current = normalizeName(currentName);
+  const historic = normalizeName(historicName);
+  const historicTokens = historic.split(' ').filter(Boolean);
+  const historicKey = historicTokens[historicTokens.length - 1] ?? historic;
+
+  return (
+    current === historic ||
+    current.includes(historicKey) ||
+    historic.includes(current) ||
+    PLAYER_NAME_ALIASES[historic]?.some(alias => normalizeName(alias) === current) ||
+    PLAYER_NAME_ALIASES[current]?.some(alias => normalizeName(alias) === historic)
+  );
+}
+
+function playedFixtures(): Fixture[] {
+  return dataService.allFixtures().filter(fixture => fixture.status === 'finished' || fixture.status === 'live');
+}
+
+function playedFixturesForTeam(teamId: string): Fixture[] {
+  return playedFixtures().filter(fixture => fixture.homeTeamId === teamId || fixture.awayTeamId === teamId);
+}
+
+function ageAt(dateOfBirth: string, at: string): { label: string; totalDays: number } {
+  const birth = new Date(`${dateOfBirth}T00:00:00Z`);
+  const then = new Date(at);
+  const totalDays = Math.max(0, Math.floor((then.getTime() - birth.getTime()) / 86_400_000));
+  let years = then.getUTCFullYear() - birth.getUTCFullYear();
+  const birthdayThisYear = Date.UTC(then.getUTCFullYear(), birth.getUTCMonth(), birth.getUTCDate());
+  if (then.getTime() < birthdayThisYear) years--;
+  const lastBirthday = Date.UTC(birth.getUTCFullYear() + years, birth.getUTCMonth(), birth.getUTCDate());
+  const days = Math.max(0, Math.floor((then.getTime() - lastBirthday) / 86_400_000));
+  return { label: `${years}y ${days}d`, totalDays };
+}
+
+function recordComparator(tableId: string): (a: AllTimeRecordRow, b: AllTimeRecordRow) => number {
+  if (tableId === 'youngest-player' || tableId === 'youngest-to-score' || tableId === 'fastest-goal') {
+    return (a, b) => comparableRecordValue(a.value) - comparableRecordValue(b.value);
+  }
+  return (a, b) => comparableRecordValue(b.value) - comparableRecordValue(a.value);
+}
+
+function comparableRecordValue(value: string): number {
+  const age = value.match(/^(\d+)y\s+(\d+)d$/);
+  if (age) return Number(age[1]) * 365 + Number(age[2]);
+
+  const seconds = value.match(/^(\d+)s$/);
+  if (seconds) return Number(seconds[1]);
+
+  const minute = value.match(/^(\d+)'$/);
+  if (minute) return Number(minute[1]) * 60;
+
+  return Number(value.replace(/[^\d.]/g, '')) || 0;
+}
+
+function opponentShortCode(fixture: Fixture, teamId: string): string {
+  const opponentId = fixture.homeTeamId === teamId ? fixture.awayTeamId : fixture.homeTeamId;
+  return dataService.team(opponentId)?.shortCode ?? opponentId;
+}
+
+function teamCountryName(teamId: string): string {
+  return dataService.team(teamId)?.name ?? teamId;
+}
+
+function teamForCountry(country: string): Team | undefined {
+  const aliases: Record<string, string> = {
+    Argentina: 'ARG',
+    Algeria: 'ALG',
+    Brazil: 'BRA',
+    Cameroon: 'CMR',
+    Colombia: 'COL',
+    'Czech Republic': 'CZE',
+    England: 'ENG',
+    Egypt: 'EGY',
+    France: 'FRA',
+    Germany: 'GER',
+    Ghana: 'GHA',
+    Hungary: 'HUN',
+    Italy: 'ITA',
+    Mexico: 'MEX',
+    'Northern Ireland': 'NIR',
+    Nigeria: 'NGA',
+    Poland: 'POL',
+    Portugal: 'POR',
+    Romania: 'ROU',
+    Russia: 'RUS',
+    Sweden: 'SWE',
+    Turkey: 'TUR',
+    Türkiye: 'TUR',
+    'United States': 'USA',
+    'West Germany': 'GER',
+  };
+
+  const id = aliases[country];
+  return id ? dataService.team(id) : undefined;
+}
+
+function flagForCountry(country: string): string {
+  const flags: Record<string, string> = {
+    Argentina: '🇦🇷',
+    Brazil: '🇧🇷',
+    Cameroon: '🇨🇲',
+    Colombia: '🇨🇴',
+    'Czech Republic': '🇨🇿',
+    England: '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}',
+    Egypt: '🇪🇬',
+    France: '🇫🇷',
+    Germany: '🇩🇪',
+    Hungary: '🇭🇺',
+    Italy: '🇮🇹',
+    Mexico: '🇲🇽',
+    Nigeria: '🇳🇬',
+    'Northern Ireland': '🇬🇧',
+    Poland: '🇵🇱',
+    Portugal: '🇵🇹',
+    Romania: '🇷🇴',
+    Russia: '🇷🇺',
+    Sweden: '🇸🇪',
+    Turkey: '🇹🇷',
+    'United States': '🇺🇸',
+    'West Germany': '🇩🇪',
+  };
+
+  return flags[country] ?? '🏳';
+}
+
+function shortPlayerName(player: string): string {
+  const names: Record<string, string> = {
+    'Cristiano Ronaldo': 'Ronaldo',
+    'Kylian Mbappe': 'Mbappe',
+    'Lionel Messi': 'Messi',
+  };
+
+  return names[player] ?? player;
+}
+
+function normalizeName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function withAlpha(hex: string, alpha: number): string {
+  if (!hex.startsWith('#') || hex.length !== 7) return hex;
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }

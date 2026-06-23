@@ -16,6 +16,7 @@ import {
 } from './devMockData';
 
 type DataSourceMode = 'auto' | 'supabase' | 'mock';
+const ENGLAND_FLAG = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}';
 
 const requestedDataSource = ((import.meta.env.VITE_DATA_SOURCE as string | undefined) ?? 'auto') as DataSourceMode;
 const canUseMockData = !import.meta.env.PROD || import.meta.env.VITE_ALLOW_MOCK_DATA === 'true';
@@ -62,6 +63,7 @@ type PlayerRow = {
   name: string;
   shirt_number: number;
   position: string;
+  date_of_birth?: string | null;
 };
 
 type MatchEventRow = {
@@ -163,6 +165,7 @@ function mapPlayerRow(row: PlayerRow): Player {
     name:        row.name,
     shirtNumber: row.shirt_number,
     position:    row.position as Position,
+    dateOfBirth: row.date_of_birth ?? undefined,
   };
 }
 
@@ -237,7 +240,7 @@ async function loadFromSupabase(): Promise<void> {
       id:           row.id,
       name:         row.name,
       shortCode:    row.short_code,
-      flagEmoji:    row.flag_emoji,
+      flagEmoji:    row.id === 'ENG' ? ENGLAND_FLAG : row.flag_emoji,
       groupId:      row.group_id,
       seed:         row.seed,
       titleOdds:    row.title_odds,

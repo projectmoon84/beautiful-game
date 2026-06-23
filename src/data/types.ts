@@ -31,6 +31,7 @@ export interface Player {
   name: string;
   shirtNumber: number;
   position: Position;
+  dateOfBirth?: string; // ISO date, when known
 }
 
 export interface Group {

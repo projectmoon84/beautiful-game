@@ -105,7 +105,7 @@ function TeamColumn({
       })}
 
       {subs.length > 0 && (
-        <div>
+        <div className="mt-8">
           <PositionHeader label="SUBS" inkColor={ink} align={align} />
           {subs.map(slot => (
             <PlayerRow
@@ -187,31 +187,23 @@ function PlayerRow({
     <SubIndicator
       direction={isSub ? 'on' : 'off'}
       minute={isSub ? slot.subbedOnMinute! : slot.subbedOffMinute!}
+      inkColor={inkColor}
     />
   ) : null;
 
+  // DOM order is always: number → name → indicator.
+  // For the away column (flex-row-reverse) this renders visually as indicator → name → number,
+  // keeping the number on the outer edge and the indicator tucked next to the name on both sides.
   return (
-    <div
-      className={`flex items-center gap-1.5 py-[5px] ${isRight ? 'flex-row-reverse' : ''}`}
-    >
-      {indicatorEl && !isRight && indicatorEl}
-      {isRight ? (
-        <>
-          {numberEl}
-          {nameEl}
-          {indicatorEl}
-        </>
-      ) : (
-        <>
-          {numberEl}
-          {nameEl}
-        </>
-      )}
+    <div className={`flex items-center gap-1.5 py-[5px] ${isRight ? 'flex-row-reverse' : ''}`}>
+      {numberEl}
+      {nameEl}
+      {indicatorEl}
     </div>
   );
 }
 
-export function SubIndicator({ direction, minute }: { direction: 'on' | 'off'; minute: number }) {
+export function SubIndicator({ direction, minute, inkColor }: { direction: 'on' | 'off'; minute: number; inkColor: string }) {
   const isOn = direction === 'on';
   return (
     <span className="flex shrink-0 items-center gap-0.5">
@@ -221,7 +213,10 @@ export function SubIndicator({ direction, minute }: { direction: 'on' | 'off'; m
       >
         {isOn ? '↑' : '↓'}
       </span>
-      <span className="text-[9px] font-medium leading-none text-white/50">
+      <span
+        className="text-[9px] font-medium leading-none"
+        style={{ color: inkColor, opacity: 0.6 }}
+      >
         {minute}'
       </span>
     </span>

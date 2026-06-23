@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { Fixture, Team } from '../data/types';
 import { formatDate, formatTime } from '../utils/format';
 
@@ -5,6 +6,7 @@ interface FixtureCardProps {
   fixture: Fixture;
   homeTeam: Team;
   awayTeam: Team;
+  obscured?: boolean;
   onClick?: () => void;
 }
 
@@ -20,7 +22,7 @@ interface FixtureCardProps {
  *
  * Scheduled cards use xl codes to fill the extra space; live/finished use lg.
  */
-export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onClick }: FixtureCardProps) {
+export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, obscured = false, onClick }: FixtureCardProps) {
   const isLive = f.status === 'live';
   const isFinished = f.status === 'finished';
   const homeBg = h.primaryHex;
@@ -59,12 +61,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
               {h.shortCode}
             </span>
             {showScore && (
-              <span
-                className="shrink-0 text-[40px] font-bold leading-[0.9]"
-                style={{ color: homeInk }}
-              >
-                {homeScore}
-              </span>
+              <ScoreDigit value={homeScore} ink={homeInk} obscured={obscured} />
             )}
           </div>
         </div>
@@ -82,12 +79,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
 
           <div className="flex items-end justify-between gap-2">
             {showScore && (
-              <span
-                className="shrink-0 text-[40px] font-bold leading-[0.9]"
-                style={{ color: awayInk }}
-              >
-                {awayScore}
-              </span>
+              <ScoreDigit value={awayScore} ink={awayInk} obscured={obscured} />
             )}
             <span
               className="min-w-0 flex-1 truncate text-right text-[40px] font-bold uppercase leading-[0.9]"
@@ -99,6 +91,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
         </div>
 
       </div>
+
 
       {isLive && (
         <div className="absolute left-[54%] top-4 flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1 pr-1.5">
@@ -112,3 +105,55 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, onCl
   );
 }
 
+// 3×3 pixel grid scaled up to a large canvas → each "pixel" is big and chunky
+const GRID = 5;
+const CANVAS_W = 54;
+const CANVAS_H = 54;
+
+function ScoreDigit({ value, ink, obscured }: { value: number; ink: string; obscured: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const cols = GRID;
+    const rows = GRID;
+
+    // Draw digit at tiny resolution on an offscreen canvas
+    const off = document.createElement('canvas');
+    off.width = cols;
+    off.height = rows;
+    const octx = off.getContext('2d')!;
+    octx.fillStyle = ink;
+    octx.font = `700 ${Math.round(rows * 0.88)}px system-ui, sans-serif`;
+    octx.textBaseline = 'middle';
+    octx.textAlign = 'center';
+    octx.fillText(String(value), cols / 2, rows / 2);
+
+    // Scale back up with no smoothing → big chunky blocks
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, cols, rows, 0, 0, CANVAS_W, CANVAS_H);
+  }, [value, ink]);
+
+  if (!obscured) {
+    return (
+      <span className="shrink-0 text-[40px] font-bold leading-[0.9]" style={{ color: ink }}>
+        {value}
+      </span>
+    );
+  }
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={CANVAS_W}
+      height={CANVAS_H}
+      className="shrink-0"
+      style={{ imageRendering: 'pixelated' }}
+    />
+  );
+}

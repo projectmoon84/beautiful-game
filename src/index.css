@@ -67,9 +67,20 @@ body {
 }
 
 @keyframes event-row-in {
-  0%   { opacity: 0; transform: translateY(-22px) scale(0.95); }
-  35%  { opacity: 1; }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  0%   { opacity: 0; transform: translateY(-20px) scale(0.985); filter: blur(3px); }
+  42%  { opacity: 1; filter: blur(0); }
+  78%  { transform: translateY(-1px) scale(1); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes sub-row-in {
+  0%   { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes stats-row-in {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes confetti-fly {

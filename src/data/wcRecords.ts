@@ -35,6 +35,23 @@ export interface WCTeamRecord {
   year?: string;
 }
 
+export interface AllTimeRecordRow {
+  rank: number;
+  player: string;
+  country: string;
+  value: string;
+  detail?: string;
+  currentDelta?: string;
+  isCurrent?: boolean;
+  isNewRecord?: boolean;
+}
+
+export interface AllTimeRecordTable {
+  id: string;
+  title: string;
+  rows: AllTimeRecordRow[];
+}
+
 export const SINGLE_TOURNAMENT_RECORDS = {
   goals: { player: 'Just Fontaine', flag: '🇫🇷', year: 1958, value: 13 } satisfies WCRecord,
   assists: { player: 'Pelé', flag: '🇧🇷', year: 1970, value: 6 } satisfies WCRecord,
@@ -140,6 +157,80 @@ export const ALL_TIME_ASSISTS: WCRankedRecord[] = [
   { rank: 5, player: 'Uwe Seeler', country: 'Germany', assists: 6 },
   { rank: 5, player: 'Francesco Totti', country: 'Italy', assists: 6 },
   { rank: 12, player: 'Cristiano Ronaldo', country: 'Portugal', assists: 2 },
+];
+
+export const ALL_TIME_APPEARANCES: WCRankedRecord[] = [
+  { rank: 1, player: 'Lionel Messi', country: 'Argentina', editions: '2006-2022', games: 26, worldCups: 5 },
+  { rank: 2, player: 'Lothar Matthaus', country: 'Germany', editions: '1982-1998', games: 25, worldCups: 5 },
+  { rank: 3, player: 'Miroslav Klose', country: 'Germany', editions: '2002-2014', games: 24, worldCups: 4 },
+  { rank: 4, player: 'Paolo Maldini', country: 'Italy', editions: '1990-2002', games: 23, worldCups: 4 },
+  { rank: 5, player: 'Cristiano Ronaldo', country: 'Portugal', editions: '2006-2022', games: 22, worldCups: 5 },
+  { rank: 6, player: 'Diego Maradona', country: 'Argentina', editions: '1982-1994', games: 21, worldCups: 4 },
+  { rank: 6, player: 'Uwe Seeler', country: 'Germany', editions: '1958-1970', games: 21, worldCups: 4 },
+  { rank: 6, player: 'Wladyslaw Zmuda', country: 'Poland', editions: '1974-1986', games: 21, worldCups: 4 },
+  { rank: 9, player: 'Cafu', country: 'Brazil', editions: '1994-2006', games: 20, worldCups: 4 },
+  { rank: 9, player: 'Grzegorz Lato', country: 'Poland', editions: '1974-1982', games: 20, worldCups: 3 },
+  { rank: 9, player: 'Philipp Lahm', country: 'Germany', editions: '2006-2014', games: 20, worldCups: 3 },
+  { rank: 9, player: 'Javier Mascherano', country: 'Argentina', editions: '2006-2018', games: 20, worldCups: 4 },
+  { rank: 9, player: 'Bastian Schweinsteiger', country: 'Germany', editions: '2006-2014', games: 20, worldCups: 3 },
+];
+
+export const ALL_TIME_AGE_AND_SPEED_RECORDS: AllTimeRecordTable[] = [
+  {
+    id: 'youngest-player',
+    title: 'Youngest Player',
+    rows: [
+      { rank: 1, player: 'Norman Whiteside', country: 'Northern Ireland', value: '17y 41d', detail: '1982' },
+      { rank: 2, player: 'Samuel Eto’o', country: 'Cameroon', value: '17y 98d', detail: '1998' },
+      { rank: 3, player: 'Femi Opabunmi', country: 'Nigeria', value: '17y 101d', detail: '2002' },
+      { rank: 4, player: 'Salomon Olembe', country: 'Cameroon', value: '17y 184d', detail: '1998' },
+      { rank: 5, player: 'Pelé', country: 'Brazil', value: '17y 234d', detail: '1958' },
+    ],
+  },
+  {
+    id: 'oldest-player',
+    title: 'Oldest Player',
+    rows: [
+      { rank: 1, player: 'Essam El-Hadary', country: 'Egypt', value: '45y 161d', detail: '2018' },
+      { rank: 2, player: 'Faryd Mondragon', country: 'Colombia', value: '43y 3d', detail: '2014' },
+      { rank: 3, player: 'Roger Milla', country: 'Cameroon', value: '42y 39d', detail: '1994' },
+      { rank: 4, player: 'Pat Jennings', country: 'Northern Ireland', value: '41y', detail: '1986' },
+      { rank: 5, player: 'Peter Shilton', country: 'England', value: '40y 292d', detail: '1990' },
+    ],
+  },
+  {
+    id: 'youngest-to-score',
+    title: 'Youngest To Score',
+    rows: [
+      { rank: 1, player: 'Pelé', country: 'Brazil', value: '17y 239d', detail: 'v Wales, 1958' },
+      { rank: 2, player: 'Manuel Rosas', country: 'Mexico', value: '18y 93d', detail: 'v Argentina, 1930' },
+      { rank: 3, player: 'Michael Owen', country: 'England', value: '18y 190d', detail: 'v Romania, 1998' },
+      { rank: 4, player: 'Nicolae Kovacs', country: 'Romania', value: '18y 197d', detail: 'v Peru, 1930' },
+      { rank: 5, player: 'Dmitry Sychev', country: 'Russia', value: '18y 231d', detail: 'v Belgium, 2002' },
+    ],
+  },
+  {
+    id: 'oldest-to-score',
+    title: 'Oldest To Score',
+    rows: [
+      { rank: 1, player: 'Roger Milla', country: 'Cameroon', value: '42y 39d', detail: 'v Russia, 1994' },
+      { rank: 2, player: 'Pepe', country: 'Portugal', value: '39y 283d', detail: 'v Switzerland, 2022' },
+      { rank: 3, player: 'Cristiano Ronaldo', country: 'Portugal', value: '37y 292d', detail: 'v Ghana, 2022' },
+      { rank: 4, player: 'Gunnar Gren', country: 'Sweden', value: '37y 236d', detail: 'v West Germany, 1958' },
+      { rank: 5, player: 'Cuauhtemoc Blanco', country: 'Mexico', value: '37y 151d', detail: 'v France, 2010' },
+    ],
+  },
+  {
+    id: 'fastest-goal',
+    title: 'Fastest Goal',
+    rows: [
+      { rank: 1, player: 'Hakan Sukur', country: 'Turkey', value: '11s', detail: 'v South Korea, 2002' },
+      { rank: 2, player: 'Vaclav Masek', country: 'Czech Republic', value: '16s', detail: 'v Mexico, 1962' },
+      { rank: 3, player: 'Ernst Lehner', country: 'Germany', value: '25s', detail: 'v Austria, 1934' },
+      { rank: 4, player: 'Bryan Robson', country: 'England', value: '27s', detail: 'v France, 1982' },
+      { rank: 5, player: 'Clint Dempsey', country: 'United States', value: '29s', detail: 'v Ghana, 2014' },
+    ],
+  },
 ];
 
 export const RECORDS_AND_FIRSTS: WCRecordFact[] = [
