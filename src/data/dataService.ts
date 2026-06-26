@@ -529,7 +529,7 @@ async function loadFromSupabase(): Promise<void> {
       .filter(row => (
         // Keep knockout fixtures even when teams are TBD (null); group fixtures need both teams
         (row.stage === 'group'
-          ? visibleTeamIds.has(row.home_team_id) && visibleTeamIds.has(row.away_team_id)
+          ? Boolean(row.home_team_id && row.away_team_id && visibleTeamIds.has(row.home_team_id) && visibleTeamIds.has(row.away_team_id))
           : true) &&
         (!hasRealFeedFixtures || row.id.startsWith('OF-'))
       ))

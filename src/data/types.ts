@@ -50,9 +50,9 @@ export interface Venue {
 
 export interface Fixture {
   id: string;
-  homeTeamId: string;
-  awayTeamId: string;
-  homePlaceholder?: string;  // e.g. "Winner · Group A" when team not yet known
+  homeTeamId: string | null;  // null for knockout slots not yet determined
+  awayTeamId: string | null;
+  homePlaceholder?: string;
   awayPlaceholder?: string;
   venueId: string;
   groupId: string;
