@@ -109,10 +109,11 @@ export const DEV_MOCK_FIXTURES: Fixture[] = generated.fixtures;
 export const DEV_MOCK_EVENTS: MatchEvent[] = generated.events;
 
 export const DEV_MOCK_INSIGHTS: InsightCard[] = [
-  { kind: 'Highest scoring', teamId: 'BRA', value: '9 goals', blurb: 'Brazil are turning pressure into shots early.' },
-  { kind: 'Most cards', teamId: 'SRB', value: '6 cards', blurb: 'Serbia have made every midfield duel feel personal.' },
-  { kind: 'Dark horse', teamId: 'SEN', value: '7 pts', blurb: 'Senegal look like a knockout problem in waiting.' },
-  { kind: 'Defying the odds', teamId: 'CAN', value: '2nd', blurb: 'The co-hosts are ahead of schedule after ten days.' },
+  { kind: 'Dark horse',     teamId: 'MAR', value: '',              blurb: 'The 2022 semi-finalists are level with Brazil in their group and quietly going about their business.' },
+  { kind: 'Fire power',     teamId: 'NOR', value: '',              blurb: 'Back after 28 years, they scored 37 in 8 qualifiers (4.62 per game)' },
+  { kind: 'Safe hands',     teamId: 'CUW', value: '15 saves',      blurb: 'Keeper Eloy Room made a record 15 saves to hold Ecuador to a 0-0 draw.' },
+  { kind: 'Messi Magic',    teamId: 'ARG', value: '18 and counting', blurb: 'Messi breaks the record for the most World Cup goals scored.' },
+  { kind: 'Ronaldo Reigns', teamId: 'POR', value: '6 World Cups',  blurb: 'His brace against Uzbekistan made him the first player ever to score at six separate tournaments.' },
 ];
 
 function generateFixturesAndEvents(): { fixtures: Fixture[]; events: MatchEvent[] } {

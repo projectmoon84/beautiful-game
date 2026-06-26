@@ -253,7 +253,7 @@ function InsightCardView({
   const bg    = team?.primaryHex ?? '#1c1917';
   const fg    = team ? rowTextColor(team) : '#ffffff';
   const hairline = team ? needsHairline(team.primaryHex) : false;
-  const hasValue = card.value && card.value !== '-';
+  const hasValue = card.value && card.value !== '-' && card.value.trim() !== '';
 
   const inner = (
     <div
