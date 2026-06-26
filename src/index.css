@@ -67,10 +67,9 @@ body {
 }
 
 @keyframes event-row-in {
-  0%   { opacity: 0; transform: translateY(-20px) scale(0.985); filter: blur(3px); }
-  42%  { opacity: 1; filter: blur(0); }
-  78%  { transform: translateY(-1px) scale(1); }
-  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  0%   { opacity: 0; transform: translateY(-16px); }
+  40%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes sub-row-in {

@@ -1,6 +1,6 @@
 import type {
   Team, Player, Group, Venue, Fixture, MatchEvent,
-  GroupTableRow, PlayerStat, InsightCard,
+  GroupTableRow, QualificationStatus, PlayerStat, InsightCard,
   FormResult, Position, Stage, FixtureStatus, EventType,
   MatchLineup, LineupSlot, MatchTeamStats,
 } from './types';
@@ -46,6 +46,8 @@ type FixtureRow = {
   id: string;
   home_team_id: string | null;
   away_team_id: string | null;
+  home_placeholder: string | null;
+  away_placeholder: string | null;
   venue_id: string;
   group_id: string | null;
   kickoff_utc: string;
@@ -146,6 +148,8 @@ function mapFixtureRow(row: FixtureRow): Fixture {
     id:                  row.id,
     homeTeamId:          row.home_team_id ?? '',
     awayTeamId:          row.away_team_id ?? '',
+    homePlaceholder:     row.home_placeholder ?? undefined,
+    awayPlaceholder:     row.away_placeholder ?? undefined,
     venueId:             row.venue_id,
     groupId:             row.group_id ?? '',
     kickoffUtc:          row.kickoff_utc,
@@ -181,6 +185,181 @@ function mapEventRow(row: MatchEventRow): MatchEvent {
     playerName:      row.player?.name ?? undefined,
     assistPlayerName: row.assist_player?.name ?? undefined,
   };
+}
+
+// ── Group standings tiebreakers ───────────────────────────────────
+// FIFA WC 2026 Art. 12 ranking criteria within a group:
+//   1 pts  2 overall GD  3 overall GF
+//   4 H2H pts  5 H2H GD  6 H2H GF  (only among teams still tied after 1–3)
+//   7 fair play (not implemented — card data not stored per group)
+//   8 drawing of lots
+//
+// For ranking 12 third-place teams: pts → GD → GF → GA (no H2H, different groups).
+
+const GROUP_FIXTURE_COUNT = 6;
+
+function allGroupsComplete(): boolean {
+  if (groupCache.size === 0) return false;
+  for (const group of groupCache.values()) {
+    const finished = fixtureCache.filter(f => f.groupId === group.id && f.status === 'finished').length;
+    if (finished < GROUP_FIXTURE_COUNT) return false;
+  }
+  return true;
+}
+
+interface H2HStats { points: number; goalDiff: number; goalsFor: number }
+
+// Build a mini H2H table for a set of teams using only finished fixtures between them.
+function h2hAmong(teamIds: Set<string>, groupId: string): Map<string, H2HStats> {
+  const stats = new Map<string, H2HStats>();
+  for (const id of teamIds) stats.set(id, { points: 0, goalDiff: 0, goalsFor: 0 });
+
+  for (const f of fixtureCache) {
+    if (f.groupId !== groupId || f.status !== 'finished') continue;
+    if (!teamIds.has(f.homeTeamId) || !teamIds.has(f.awayTeamId)) continue;
+
+    const hs = f.homeScore ?? 0;
+    const as_ = f.awayScore ?? 0;
+
+    const home = stats.get(f.homeTeamId)!;
+    home.goalsFor += hs;
+    home.goalDiff += hs - as_;
+    if (hs > as_) home.points += 3; else if (hs === as_) home.points += 1;
+
+    const away = stats.get(f.awayTeamId)!;
+    away.goalsFor += as_;
+    away.goalDiff += as_ - hs;
+    if (as_ > hs) away.points += 3; else if (as_ === hs) away.points += 1;
+  }
+
+  return stats;
+}
+
+// Resolve teams already known to be equal on pts + overall GD + overall GF.
+// Applies H2H pts → H2H GD → H2H GF among the tied set. If a strict sub-group
+// emerges but some teams remain tied, restarts H2H for just that sub-group (FIFA rule).
+function resolveTied(tied: GroupTableRow[], groupId: string): GroupTableRow[] {
+  if (tied.length === 1) return tied;
+
+  const teamIds = new Set(tied.map(r => r.team.id));
+  const h2h = h2hAmong(teamIds, groupId);
+
+  const sorted = [...tied].sort((a, b) => {
+    const ah = h2h.get(a.team.id)!;
+    const bh = h2h.get(b.team.id)!;
+    return bh.points - ah.points || bh.goalDiff - ah.goalDiff || bh.goalsFor - ah.goalsFor;
+  });
+
+  const result: GroupTableRow[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const pivot = h2h.get(sorted[i].team.id)!;
+    const sub = [sorted[i]];
+    while (
+      i + sub.length < sorted.length &&
+      h2h.get(sorted[i + sub.length].team.id)!.points   === pivot.points &&
+      h2h.get(sorted[i + sub.length].team.id)!.goalDiff === pivot.goalDiff &&
+      h2h.get(sorted[i + sub.length].team.id)!.goalsFor === pivot.goalsFor
+    ) {
+      sub.push(sorted[i + sub.length]);
+    }
+
+    // Recurse only when the sub-group is smaller (otherwise we'd loop forever).
+    result.push(...(sub.length < tied.length ? resolveTied(sub, groupId) : sub));
+    i += sub.length;
+  }
+
+  return result;
+}
+
+// Full FIFA WC 2026 group sort: pts → GD → GF → H2H (among still-tied teams).
+function sortWithTiebreakers(rows: GroupTableRow[], groupId: string): GroupTableRow[] {
+  if (rows.length <= 1) return rows;
+
+  // Group by points (criterion 1).
+  const byPts = new Map<number, GroupTableRow[]>();
+  for (const row of rows) {
+    const g = byPts.get(row.points) ?? [];
+    g.push(row);
+    byPts.set(row.points, g);
+  }
+
+  return [...byPts.keys()].sort((a, b) => b - a).flatMap(pts => {
+    const group = byPts.get(pts)!;
+    if (group.length === 1) return group;
+
+    // Sort by overall GD then GF (criteria 2–3).
+    const byOverall = [...group].sort((a, b) => b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor);
+
+    // Within each same-GD+GF sub-group, apply H2H (criteria 4–6).
+    const result: GroupTableRow[] = [];
+    let i = 0;
+    while (i < byOverall.length) {
+      const pivot = byOverall[i];
+      const sub = [pivot];
+      while (
+        i + sub.length < byOverall.length &&
+        byOverall[i + sub.length].goalDiff === pivot.goalDiff &&
+        byOverall[i + sub.length].goalsFor  === pivot.goalsFor
+      ) {
+        sub.push(byOverall[i + sub.length]);
+      }
+      result.push(...(sub.length === 1 ? sub : resolveTied(sub, groupId)));
+      i += sub.length;
+    }
+
+    return result;
+  });
+}
+
+// Rank 12 third-place teams: pts → GD → GF → GA (no H2H — different groups).
+// Fair play is criterion 4 per FIFA regulations but requires per-group card data
+// we don't store; GA is used as a reasonable programmatic fallback before lots.
+function computeQualified3rdIds(): Set<string> {
+  const thirds: GroupTableRow[] = [];
+  for (const group of groupCache.values()) {
+    const cached = standingsCache.get(group.id);
+    if (!cached || cached.length < 3) continue;
+    // Apply tiebreakers so we get the actual 3rd-place team, not the basic-sorted one.
+    const sorted = sortWithTiebreakers(cached, group.id);
+    thirds.push(sorted[2]);
+  }
+  thirds.sort((a, b) =>
+    b.points    - a.points    ||
+    b.goalDiff  - a.goalDiff  ||
+    b.goalsFor  - a.goalsFor  ||
+    a.goalsAgainst - b.goalsAgainst
+  );
+  return new Set(thirds.slice(0, 8).map(r => r.team.id));
+}
+
+// Applied at read-time so isLive always reflects the current fixture state.
+function addGroupStatuses(rows: GroupTableRow[], groupId: string): GroupTableRow[] {
+  const groupFixtures = fixtureCache.filter(f => f.groupId === groupId && f.stage === 'group');
+  const liveTeamIds = new Set(
+    groupFixtures
+      .filter(f => f.status === 'live')
+      .flatMap(f => [f.homeTeamId, f.awayTeamId]),
+  );
+  const allFinished = groupFixtures.filter(f => f.status === 'finished').length === GROUP_FIXTURE_COUNT;
+  const qualified3rdIds = allFinished && allGroupsComplete() ? computeQualified3rdIds() : new Set<string>();
+
+  return rows.map((row, idx) => {
+    const pos = idx + 1;
+    let qualificationStatus: QualificationStatus = null;
+    if (allFinished) {
+      if (pos <= 2) {
+        qualificationStatus = 'qualified';
+      } else if (pos === 3) {
+        qualificationStatus = qualified3rdIds.size > 0
+          ? (qualified3rdIds.has(row.team.id) ? 'qualified' : 'eliminated')
+          : 'pending_third';
+      } else {
+        qualificationStatus = 'eliminated';
+      }
+    }
+    return { ...row, isLive: liveTeamIds.has(row.team.id), qualificationStatus };
+  });
 }
 
 function loadMockData(): void {
@@ -284,14 +463,16 @@ async function loadFromSupabase(): Promise<void> {
       const groupRows = groupedStandings.get(row.group_id) ?? [];
       groupRows.push({
         team,
-        played:       row.played        ?? 0,
-        won:          row.won           ?? 0,
-        drawn:        row.drawn         ?? 0,
-        lost:         row.lost          ?? 0,
-        goalsFor:     row.goals_for     ?? 0,
-        goalsAgainst: row.goals_against ?? 0,
-        goalDiff:     row.goal_diff     ?? 0,
-        points:       row.points        ?? 0,
+        played:              row.played        ?? 0,
+        won:                 row.won           ?? 0,
+        drawn:               row.drawn         ?? 0,
+        lost:                row.lost          ?? 0,
+        goalsFor:            row.goals_for     ?? 0,
+        goalsAgainst:        row.goals_against ?? 0,
+        goalDiff:            row.goal_diff     ?? 0,
+        points:              row.points        ?? 0,
+        isLive:              false,
+        qualificationStatus: null,
       });
       groupedStandings.set(row.group_id, groupRows);
     }
@@ -556,8 +737,11 @@ export const dataService = {
   // ── Derived: standings (mirrors the SQL standings view) ───────
 
   standingsForGroup(groupId: string): GroupTableRow[] {
+    // Statuses are always computed fresh at read-time so isLive stays current.
+    // Full tiebreakers (pts → GD → GF → H2H) applied here using fixtureCache,
+    // which is guaranteed to be populated by the time callers read standings.
     const cachedRows = standingsCache.get(groupId);
-    if (cachedRows) return cachedRows;
+    if (cachedRows) return addGroupStatuses(sortWithTiebreakers(cachedRows, groupId), groupId);
 
     const group = groupCache.get(groupId);
     if (!group) return [];
@@ -566,7 +750,7 @@ export const dataService = {
     for (const teamId of group.teamIds) {
       const team = teamCache.get(teamId);
       if (!team) continue;
-      rows.set(teamId, { team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, goalDiff: 0, points: 0 });
+      rows.set(teamId, { team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, goalDiff: 0, points: 0, isLive: false, qualificationStatus: null });
     }
 
     for (const f of fixtureCache) {
@@ -595,9 +779,7 @@ export const dataService = {
 
     for (const row of rows.values()) row.goalDiff = row.goalsFor - row.goalsAgainst;
 
-    return [...rows.values()].sort(
-      (a, b) => b.points - a.points || b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor
-    );
+    return addGroupStatuses(sortWithTiebreakers([...rows.values()], groupId), groupId);
   },
 
   // ── Derived: player stats (mirrors the SQL player_stats view) ─

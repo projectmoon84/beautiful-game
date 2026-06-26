@@ -285,6 +285,61 @@ export const FIXTURES: Fixture[] = [
     kickoffUtc: '2026-06-11T19:00:00Z', stage: 'group',
     status: 'scheduled',
   },
+
+  // ── Round of 32 (Jul 1–4) ─────────────────────────────────────
+  // Mix of known teams and TBD slots to exercise both card states.
+  {
+    id: 'K-R32-1', homeTeamId: 'BRA', awayTeamId: 'ESP', venueId: 'V1', groupId: '',
+    kickoffUtc: '2026-07-01T19:00:00Z', stage: 'r32', status: 'scheduled',
+  },
+  {
+    id: 'K-R32-2', homeTeamId: 'ARG', awayTeamId: 'NED', venueId: 'V2', groupId: '',
+    kickoffUtc: '2026-07-01T22:00:00Z', stage: 'r32', status: 'scheduled',
+  },
+  {
+    id: 'K-R32-3', homeTeamId: 'K-TBD-3H', awayTeamId: 'K-TBD-3A', venueId: 'V3', groupId: '',
+    kickoffUtc: '2026-07-02T19:00:00Z', stage: 'r32', status: 'scheduled',
+  },
+  {
+    id: 'K-R32-4', homeTeamId: 'GER', awayTeamId: 'K-TBD-4A', venueId: 'V1', groupId: '',
+    kickoffUtc: '2026-07-02T22:00:00Z', stage: 'r32', status: 'scheduled',
+  },
+
+  // ── Round of 16 (Jul 5–8) ─────────────────────────────────────
+  {
+    id: 'K-R16-1', homeTeamId: 'K-TBD-R16-1H', awayTeamId: 'K-TBD-R16-1A', venueId: 'V2', groupId: '',
+    kickoffUtc: '2026-07-05T19:00:00Z', stage: 'r16', status: 'scheduled',
+  },
+  {
+    id: 'K-R16-2', homeTeamId: 'K-TBD-R16-2H', awayTeamId: 'K-TBD-R16-2A', venueId: 'V3', groupId: '',
+    kickoffUtc: '2026-07-06T19:00:00Z', stage: 'r16', status: 'scheduled',
+  },
+
+  // ── Quarter-finals (Jul 10–11) ────────────────────────────────
+  {
+    id: 'K-QF-1', homeTeamId: 'K-TBD-QF-1H', awayTeamId: 'K-TBD-QF-1A', venueId: 'V1', groupId: '',
+    kickoffUtc: '2026-07-10T19:00:00Z', stage: 'qf', status: 'scheduled',
+  },
+  {
+    id: 'K-QF-2', homeTeamId: 'K-TBD-QF-2H', awayTeamId: 'K-TBD-QF-2A', venueId: 'V2', groupId: '',
+    kickoffUtc: '2026-07-11T19:00:00Z', stage: 'qf', status: 'scheduled',
+  },
+
+  // ── Semi-finals (Jul 14–15) ───────────────────────────────────
+  {
+    id: 'K-SF-1', homeTeamId: 'K-TBD-SF-1H', awayTeamId: 'K-TBD-SF-1A', venueId: 'V1', groupId: '',
+    kickoffUtc: '2026-07-14T19:00:00Z', stage: 'sf', status: 'scheduled',
+  },
+  {
+    id: 'K-SF-2', homeTeamId: 'K-TBD-SF-2H', awayTeamId: 'K-TBD-SF-2A', venueId: 'V2', groupId: '',
+    kickoffUtc: '2026-07-15T19:00:00Z', stage: 'sf', status: 'scheduled',
+  },
+
+  // ── Final (Jul 19) ────────────────────────────────────────────
+  {
+    id: 'K-FINAL', homeTeamId: 'K-TBD-FH', awayTeamId: 'K-TBD-FA', venueId: 'V1', groupId: '',
+    kickoffUtc: '2026-07-19T19:00:00Z', stage: 'final', status: 'scheduled',
+  },
 ];
 
 // ── Match events ──────────────────────────────────────────────────

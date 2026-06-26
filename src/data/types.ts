@@ -52,6 +52,8 @@ export interface Fixture {
   id: string;
   homeTeamId: string;
   awayTeamId: string;
+  homePlaceholder?: string;  // e.g. "Winner · Group A" when team not yet known
+  awayPlaceholder?: string;
   venueId: string;
   groupId: string;
   kickoffUtc: string;   // ISO 8601
@@ -77,6 +79,9 @@ export interface MatchEvent {
 
 // ── Derived/computed types ────────────────────────────────────────
 
+// null = group not yet decided; pending_third = group done but cross-group 3rd ranking not settled
+export type QualificationStatus = 'qualified' | 'pending_third' | 'eliminated' | null;
+
 export interface GroupTableRow {
   team: Team;
   played: number;
@@ -87,6 +92,8 @@ export interface GroupTableRow {
   goalsAgainst: number;
   goalDiff: number;
   points: number;
+  isLive: boolean;
+  qualificationStatus: QualificationStatus;
 }
 
 export interface PlayerStat {

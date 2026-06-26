@@ -176,6 +176,30 @@ function stageForRound(round: string): string {
   return 'group';
 }
 
+// Translates OpenFootball's knockout slot codes into user-friendly labels.
+// Examples: "3A/B/C/D/F" → "Best 3rd · A/B/C/D/F"
+//           "1I"          → "Winner · Group I"
+//           "2J"          → "Runner-up · Group J"
+//           "W73"         → "Winner · Match 73"
+function placeholderLabel(teamStr: string): string | null {
+  // 3rd-place slot: digits then groups e.g. "3A/B/C/D/F"
+  const thirdMatch = teamStr.match(/^3([A-L](?:\/[A-L])+)$/);
+  if (thirdMatch) return `Best 3rd · ${thirdMatch[1]}`;
+
+  // Single-group slot: "1A" = winner, "2B" = runner-up
+  const posMatch = teamStr.match(/^([12])([A-L])$/);
+  if (posMatch) {
+    const label = posMatch[1] === '1' ? 'Winner' : 'Runner-up';
+    return `${label} · Group ${posMatch[2]}`;
+  }
+
+  // Winner of a prior knockout match: "W73"
+  const winMatch = teamStr.match(/^W(\d+)$/);
+  if (winMatch) return `Winner · Match ${winMatch[1]}`;
+
+  return null;
+}
+
 function resultFor(match: OFMatch): { status: string; home_score: number | null; away_score: number | null } {
   const score = Array.isArray(match.score) ? match.score : match.score?.ft;
   return score
@@ -387,8 +411,10 @@ Deno.serve(async () => {
 
       fixtureRows.push({
         id,
-        home_team_id: homeId ?? null,  // null until group stage determines the team
+        home_team_id: homeId ?? null,
         away_team_id: awayId ?? null,
+        home_placeholder: homeId ? null : placeholderLabel(match.team1),
+        away_placeholder: awayId ? null : placeholderLabel(match.team2),
         venue_id: venueId,
         group_id: stage === 'group' ? fixtureGroupId : null,
         kickoff_utc: toIsoDate(match.date, match.time),

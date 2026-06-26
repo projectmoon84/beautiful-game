@@ -52,7 +52,7 @@ export default function Matches() {
 
   // Unique group IDs for today's fixtures (for inline standings)
   const dayGroupIds = useMemo(() => {
-    return [...new Set(dayFixtures.map(f => f.groupId))];
+    return [...new Set(dayFixtures.map(f => f.groupId).filter(Boolean))];
   }, [dayFixtures]);
 
   return (

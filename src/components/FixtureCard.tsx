@@ -25,6 +25,15 @@ interface FixtureCardProps {
 export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, obscured = false, onClick }: FixtureCardProps) {
   const isLive = f.status === 'live';
   const isFinished = f.status === 'finished';
+
+  const STAGE_SHORT: Record<string, string> = {
+    r32: 'R32', r16: 'R16', qf: 'QF', sf: 'SF', final: 'Final',
+  };
+  const stageLabel = f.groupId
+    ? `Group ${f.groupId}`
+    : (STAGE_SHORT[f.stage] ?? f.stage.toUpperCase());
+  const rightLabel = isFinished ? `FT · ${stageLabel}` : stageLabel;
+
   const homeBg = h.primaryHex;
   const awayBg = a.primaryHex;
   const homeInk = h.secondaryHex;
@@ -74,7 +83,7 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, obsc
             className="text-right text-[12px] font-medium leading-none"
             style={{ color: awayInk }}
           >
-            {isFinished ? `FT · Group ${f.groupId}` : `Group ${f.groupId}`}
+            {rightLabel}
           </div>
 
           <div className="flex items-end justify-between gap-2">

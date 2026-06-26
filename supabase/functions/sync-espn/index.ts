@@ -409,6 +409,98 @@ function formatError(error: unknown): string {
   }
 }
 
+// ── Bracket slot hydration ────────────────────────────────────────────────────
+// Runs automatically whenever null-team knockout fixtures exist within 14 days.
+// Matches each DB fixture to an ESPN scoreboard event by kickoff time (±30 min),
+// resolves team IDs from ESPN's team.abbreviation, and writes them back to the DB.
+async function hydrateKnockoutSlots(
+  log: string[],
+  syncedAt: string,
+): Promise<{ slotsUpdated: number; apiRequests: number }> {
+  const now = new Date(syncedAt);
+  const windowEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+  const { data: nullSlots } = await supabaseAdmin
+    .from('fixtures')
+    .select('id, kickoff_utc, stage, edited_by_admin')
+    .neq('stage', 'group')
+    .is('home_team_id', null)
+    .gte('kickoff_utc', now.toISOString())
+    .lte('kickoff_utc', windowEnd.toISOString())
+    .eq('edited_by_admin', false);
+
+  if (!nullSlots?.length) return { slotsUpdated: 0, apiRequests: 0 };
+
+  log.push(`Bracket hydration: ${nullSlots.length} null slot(s) to check`);
+
+  // One ESPN scoreboard fetch per distinct UTC date.
+  const espnDates = new Set<string>();
+  for (const f of nullSlots) espnDates.add(ymdUtc(new Date(f.kickoff_utc)));
+
+  let apiReqs = 0;
+  const allEvents: EspnEvent[] = [];
+  for (const date of espnDates) {
+    try {
+      const sb = await fetchJson<EspnScoreboard>(`${ESPN_BASE}/scoreboard?dates=${date}&limit=100`);
+      apiReqs++;
+      allEvents.push(...(sb.events ?? []));
+      log.push(`Bracket hydration: scoreboard ${date} → ${sb.events?.length ?? 0} events`);
+    } catch (err) {
+      log.push(`Bracket hydration: scoreboard ${date} failed — ${formatError(err)}`);
+    }
+  }
+
+  // Build team lookup: ESPN abbreviation → our teams.id.
+  const { data: dbTeams } = await supabaseAdmin.from('teams').select('id, short_code');
+  const teamByAbbr = new Map<string, string>();
+  for (const t of dbTeams ?? []) {
+    if (t.id) teamByAbbr.set(t.id.toUpperCase(), t.id);
+    if (t.short_code) teamByAbbr.set(t.short_code.toUpperCase(), t.id);
+  }
+
+  let filled = 0;
+
+  for (const dbFixture of nullSlots) {
+    const kickoffMs = new Date(dbFixture.kickoff_utc).getTime();
+
+    // Closest ESPN event within ±30 min.
+    const match = allEvents
+      .map(ev => ({ ev, diff: Math.abs((eventKickoffMs(ev) ?? Infinity) - kickoffMs) }))
+      .filter(({ diff }) => diff <= 30 * 60 * 1000)
+      .sort((a, b) => a.diff - b.diff)[0]?.ev ?? null;
+
+    if (!match) continue;
+
+    const competitors = match.competitions?.[0]?.competitors ?? [];
+    const homeComp = competitors.find(c => c.homeAway === 'home');
+    const awayComp = competitors.find(c => c.homeAway === 'away');
+    const homeId = teamByAbbr.get(homeComp?.team?.abbreviation?.toUpperCase() ?? '');
+    const awayId = teamByAbbr.get(awayComp?.team?.abbreviation?.toUpperCase() ?? '');
+
+    if (!homeId || !awayId) {
+      log.push(
+        `Bracket slot ${dbFixture.id}: ESPN ${homeComp?.team?.abbreviation}/${awayComp?.team?.abbreviation} not in teams table`,
+      );
+      continue;
+    }
+
+    const { error } = await supabaseAdmin
+      .from('fixtures')
+      .update({ home_team_id: homeId, away_team_id: awayId, source: 'espn', updated_at: syncedAt })
+      .eq('id', dbFixture.id)
+      .eq('edited_by_admin', false);
+
+    if (error) {
+      log.push(`Bracket slot ${dbFixture.id}: write failed — ${error.message}`);
+    } else {
+      log.push(`Bracket slot ${dbFixture.id}: filled → ${homeId} vs ${awayId}`);
+      filled++;
+    }
+  }
+
+  return { slotsUpdated: filled, apiRequests: apiReqs };
+}
+
 Deno.serve(async (request) => {
   const body = (await request.json().catch(() => ({}))) as SyncRequestBody;
   const log: string[] = [];
@@ -424,10 +516,16 @@ Deno.serve(async (request) => {
   let eventsInserted = 0;
   let possibleEvents = 0;
   let mappableEvents = 0;
+  let slotsUpdated = 0;
 
   try {
     if (body.reason) log.push(`Reason: ${body.reason}`);
     if (targetFixtureId) log.push(`Target fixture: ${targetFixtureId}`);
+
+    // Fill any null-team knockout slots from the ESPN bracket before doing live sync.
+    const hydration = await hydrateKnockoutSlots(log, syncedAt);
+    slotsUpdated = hydration.slotsUpdated;
+    apiRequests += hydration.apiRequests;
 
     const { data: dbFixtures, error: fixturesError } = await supabaseAdmin
       .from('fixtures')
@@ -806,6 +904,7 @@ Deno.serve(async (request) => {
           apiRequests,
           scoreboardEvents: events.length,
           fixtureUpdates,
+          slotsUpdated,
           eventFetches,
           eventsInserted,
           possibleEvents,
@@ -827,6 +926,7 @@ Deno.serve(async (request) => {
           apiRequests,
           scoreboardEvents: 0,
           fixtureUpdates,
+          slotsUpdated,
           eventFetches,
           eventsInserted,
           possibleEvents,

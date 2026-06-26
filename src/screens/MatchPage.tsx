@@ -22,9 +22,13 @@ const SECTION_H = 212;
 
 // Each minute of match time maps to this many ms in the reveal timeline.
 const MS_PER_MINUTE = 150;
-const EVENT_BREATH_MS = 520;
-const GOAL_BREATH_MS = 1100;
-const TIMELINE_EASE = 'cubic-bezier(0.19,1,0.22,1)';
+const EVENT_BREATH_MS = 1100;        // breathing room between consecutive events
+const GOAL_BREATH_MS = 1600;         // extra theatre after a goal
+const SAME_MINUTE_EXTRA_MS = 300;    // bonus gap after a same-minute cluster
+const TIMELINE_EASE = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'; // smooth ease-out for push-downs
+const ENTRY_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';           // gentle spring for new event entry
+const ENTRY_DELAY_MS = 280;   // let space clear before the new event slides in
+const ENTRY_DURATION_MS = 680;
 
 type RevealPhase = 'enter' | 'rings' | 'colours' | 'score' | 'events' | 'done';
 
@@ -208,7 +212,7 @@ function MatchPageContent({
   // ── FLIP: smooth push-down of bottom section when a new event appears ─────
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const flipBottom = (el: HTMLDivElement, offset: number, duration = 1050) => {
+  const flipBottom = (el: HTMLDivElement, offset: number, duration = 480) => {
     el.style.transition = 'none';
     el.style.transform = `translateY(-${offset}px)`;
     el.getBoundingClientRect();
@@ -224,16 +228,6 @@ function MatchPageContent({
     const rowH = newEvent?.assistPlayerId ? 58 : 46;
     flipBottom(el, rowH);
   }, [revealedCount]);
-
-  // Tick the replay minute counter while the events phase is running.
-  const lastEventMinute = playableEvents.length > 0 ? playableEvents[playableEvents.length - 1].minute : 90;
-  useEffect(() => {
-    if (phase !== 'events') return;
-    const interval = window.setInterval(() => {
-      setReplayMinute(m => Math.min(m + 1, lastEventMinute));
-    }, MS_PER_MINUTE);
-    return () => window.clearInterval(interval);
-  }, [phase, lastEventMinute]);
 
   useEffect(() => {
     const timers: number[] = [];
@@ -262,10 +256,22 @@ function MatchPageContent({
 
     let bonusMs = 0;
     let lastFireTime = 1200;
+    let prevMinute = 0;     // tracks the last minute the clock showed
+    let lastBreath = EVENT_BREATH_MS;
+
     playableEvents.forEach((evt, i) => {
       const fireAt = 1200 + evt.minute * MS_PER_MINUTE + bonusMs;
       lastFireTime = fireAt;
+
+      // Tick minutes between prevMinute and this event (clock ticks naturally up to the event).
+      for (let m = prevMinute + 1; m < evt.minute; m++) {
+        const tickAt = fireAt - (evt.minute - m) * MS_PER_MINUTE;
+        schedule(() => setReplayMinute(m), tickAt);
+      }
+
+      // At the event's own minute: clock reaches the event's minute AND the event reveals.
       schedule(() => {
+        setReplayMinute(evt.minute);
         setRevealedCount(i + 1);
         if (GOAL_TYPES.has(evt.type)) {
           const team = evt.teamId === home.id ? home : away;
@@ -275,12 +281,29 @@ function MatchPageContent({
           ]);
         }
       }, fireAt);
-      // Let each beat land; goals get a little extra theatre.
-      bonusMs += EVENT_BREATH_MS + (GOAL_TYPES.has(evt.type) ? GOAL_BREATH_MS : 0);
+
+      prevMinute = evt.minute;
+
+      // Same-minute events get a bonus gap so the cluster feels intentionally staggered.
+      const isSameMinuteAsPrev = i > 0 && playableEvents[i - 1].minute === evt.minute;
+      lastBreath = EVENT_BREATH_MS
+        + (GOAL_TYPES.has(evt.type) ? GOAL_BREATH_MS : 0)
+        + (isSameMinuteAsPrev ? SAME_MINUTE_EXTRA_MS : 0);
+      bonusMs += lastBreath;
     });
 
-    // Catch our breath after the final timeline event before settling.
-    schedule(() => setPhase('done'), lastFireTime + 1800);
+    // After the last event's breathing pause, tick the clock to 90 (or to the ET
+    // minute if the last event was in extra time).
+    const maxMinute = Math.max(90, prevMinute);
+    let lastScheduledTime = lastFireTime;
+    for (let m = prevMinute + 1; m <= maxMinute; m++) {
+      const tickAt = lastFireTime + lastBreath + (m - prevMinute) * MS_PER_MINUTE;
+      lastScheduledTime = tickAt;
+      schedule(() => setReplayMinute(m), tickAt);
+    }
+
+    // Settle once the clock finishes.
+    schedule(() => setPhase('done'), lastScheduledTime + 800);
     return () => {
       timers.forEach(timerId => window.clearTimeout(timerId));
       revealTimerIdsRef.current = revealTimerIdsRef.current.filter(timerId => !timers.includes(timerId));
@@ -698,7 +721,16 @@ function EventTimeline({
   homeColor: string;
   awayColor: string;
 }) {
-  const sorted = [...events].sort((a, b) => b.minute - a.minute);
+  // Sort descending by minute. Within the same minute, put the most recently
+  // revealed event first so new arrivals enter at the top (matching the FLIP).
+  const indexMap = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
+  const sorted = useMemo(
+    () => [...events].sort((a, b) => {
+      const d = b.minute - a.minute;
+      return d !== 0 ? d : (indexMap.get(b.id) ?? 0) - (indexMap.get(a.id) ?? 0);
+    }),
+    [events, indexMap],
+  );
 
   // FLIP: track DOM positions of existing rows so we can slide them to their
   // new positions whenever a new event or subs are inserted above them.
@@ -725,11 +757,11 @@ function EventTimeline({
       el.style.transform = `translateY(${delta}px)`;
       el.style.willChange = 'transform';
       el.getBoundingClientRect();
-      el.style.transition = `transform 1400ms ${TIMELINE_EASE}`;
+      el.style.transition = `transform 480ms ${TIMELINE_EASE}`;
       el.style.transform = '';
       window.setTimeout(() => {
         el.style.willChange = '';
-      }, 1450);
+      }, 500);
     });
   }, [events.length]);
 
@@ -801,7 +833,7 @@ function TimelineEvent({
       ref={rowRef}
       className="flex w-full items-start py-1"
       style={{
-        animation: isNew ? `event-row-in 1050ms ${TIMELINE_EASE} both` : undefined,
+        animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_DELAY_MS}ms ${ENTRY_EASE} both` : undefined,
       }}
     >
       {/* Left half — home events */}
