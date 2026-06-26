@@ -14,12 +14,14 @@ export type Database = {
     Tables: {
       fixtures: {
         Row: {
+          away_placeholder: string | null
           away_score: number | null
-          away_team_id: string
+          away_team_id: string | null
           edited_by_admin: boolean
           group_id: string | null
+          home_placeholder: string | null
           home_score: number | null
-          home_team_id: string
+          home_team_id: string | null
           id: string
           kickoff_utc: string
           man_of_match_player_id: string | null
@@ -29,12 +31,14 @@ export type Database = {
           venue_id: string
         }
         Insert: {
+          away_placeholder?: string | null
           away_score?: number | null
-          away_team_id: string
+          away_team_id?: string | null
           edited_by_admin?: boolean
           group_id?: string | null
+          home_placeholder?: string | null
           home_score?: number | null
-          home_team_id: string
+          home_team_id?: string | null
           id: string
           kickoff_utc: string
           man_of_match_player_id?: string | null
@@ -44,12 +48,14 @@ export type Database = {
           venue_id: string
         }
         Update: {
+          away_placeholder?: string | null
           away_score?: number | null
-          away_team_id?: string
+          away_team_id?: string | null
           edited_by_admin?: boolean
           group_id?: string | null
+          home_placeholder?: string | null
           home_score?: number | null
-          home_team_id?: string
+          home_team_id?: string | null
           id?: string
           kickoff_utc?: string
           man_of_match_player_id?: string | null

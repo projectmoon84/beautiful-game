@@ -995,5 +995,7 @@ function liveDemoRows(): GroupTableRow[] {
     goalsAgainst: index === 0 ? 2 : index === 3 ? 3 : 0,
     goalDiff: index === 0 ? 1 : index === 3 ? -1 : 0,
     points: index === 0 ? 3 : 0,
+    isLive: false,
+    qualificationStatus: null,
   }));
 }
