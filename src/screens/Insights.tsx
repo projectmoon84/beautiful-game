@@ -12,7 +12,7 @@ import {
   type WCRecord,
   type WCRankedRecord,
 } from '../data/wcRecords';
-import type { Fixture, Player, PlayerStat, Team } from '../data/types';
+import type { Fixture, InsightCard, Player, PlayerStat, Team } from '../data/types';
 import { contrastRatio, readableOn } from '../theme/contrast';
 
 type InsightsView = '2026' | 'records';
@@ -178,8 +178,14 @@ function NowView({
   involvement: InvolvementRow[];
   onTeamClick: (id: string) => void;
 }) {
+  const insights = useMemo(() => dataService.insights(), []);
+
   return (
     <>
+      {insights.length > 0 && (
+        <InsightCardsBlock insights={insights} onTeamClick={onTeamClick} />
+      )}
+
       <LiveLeaderboard
         title="Goals"
         record={SINGLE_TOURNAMENT_RECORDS.goals}
@@ -198,6 +204,101 @@ function NowView({
 
       <InvolvementBlock rows={involvement} onTeamClick={onTeamClick} />
     </>
+  );
+}
+
+// ─── Insight cards ────────────────────────────────────────────────────────────
+
+// Deterministic hue from a string so every distinct `kind` always gets
+// the same accent colour across renders, with no hard-coded list required.
+function kindHue(kind: string): number {
+  let hash = 0;
+  for (let i = 0; i < kind.length; i++) hash = (hash * 31 + kind.charCodeAt(i)) >>> 0;
+  return hash % 360;
+}
+
+function kindAccent(kind: string): { badge: string; glow: string } {
+  const h = kindHue(kind);
+  return {
+    badge: `hsl(${h}, 80%, 62%)`,
+    glow:  `hsla(${h}, 80%, 62%, 0.12)`,
+  };
+}
+
+function InsightCardsBlock({
+  insights,
+  onTeamClick,
+}: {
+  insights: InsightCard[];
+  onTeamClick: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-[1px]" style={{ background: 'var(--surface)' }}>
+      {insights.map(card => (
+        <InsightCardView key={card.kind + card.teamId} card={card} onTeamClick={onTeamClick} />
+      ))}
+    </div>
+  );
+}
+
+function InsightCardView({
+  card,
+  onTeamClick,
+}: {
+  card: InsightCard;
+  onTeamClick: (id: string) => void;
+}) {
+  const team = dataService.team(card.teamId);
+  const accent = kindAccent(card.kind);
+  const bg    = team?.primaryHex ?? '#1c1917';
+  const fg    = team ? rowTextColor(team) : '#ffffff';
+  const hairline = team ? needsHairline(team.primaryHex) : false;
+  const hasValue = card.value && card.value !== '-';
+
+  const inner = (
+    <div
+      className="flex w-full flex-col gap-2 px-4 py-4"
+      style={{
+        background: bg,
+        color: fg,
+        boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
+      }}
+    >
+      {/* Kind badge */}
+      <div className="flex items-center gap-2">
+        <span
+          className="rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest leading-none"
+          style={{ background: accent.glow, color: accent.badge, border: `1px solid ${accent.badge}` }}
+        >
+          {card.kind}
+        </span>
+        {team && (
+          <span className="text-[12px] font-semibold leading-none" style={{ color: withAlpha(fg, 0.55) }}>
+            {team.flagEmoji} {team.name}
+          </span>
+        )}
+      </div>
+
+      {/* Value — only shown when meaningful */}
+      {hasValue && (
+        <span className="text-[28px] font-bold leading-none tabular-nums" style={{ color: fg }}>
+          {card.value}
+        </span>
+      )}
+
+      {/* Blurb */}
+      <p className="text-[13px] font-medium leading-snug" style={{ color: withAlpha(fg, 0.78) }}>
+        {card.blurb}
+      </p>
+    </div>
+  );
+
+  return team ? (
+    <button type="button" onClick={() => onTeamClick(team.id)} className="block w-full text-left active:brightness-95">
+      {inner}
+    </button>
+  ) : (
+    <div>{inner}</div>
   );
 }
 
