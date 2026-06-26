@@ -209,22 +209,6 @@ function NowView({
 
 // ─── Insight cards ────────────────────────────────────────────────────────────
 
-// Deterministic hue from a string so every distinct `kind` always gets
-// the same accent colour across renders, with no hard-coded list required.
-function kindHue(kind: string): number {
-  let hash = 0;
-  for (let i = 0; i < kind.length; i++) hash = (hash * 31 + kind.charCodeAt(i)) >>> 0;
-  return hash % 360;
-}
-
-function kindAccent(kind: string): { badge: string; glow: string } {
-  const h = kindHue(kind);
-  return {
-    badge: `hsl(${h}, 80%, 62%)`,
-    glow:  `hsla(${h}, 80%, 62%, 0.12)`,
-  };
-}
-
 function InsightCardsBlock({
   insights,
   onTeamClick,
@@ -249,47 +233,37 @@ function InsightCardView({
   onTeamClick: (id: string) => void;
 }) {
   const team = dataService.team(card.teamId);
-  const accent = kindAccent(card.kind);
-  const bg    = team?.primaryHex ?? '#1c1917';
-  const fg    = team ? rowTextColor(team) : '#ffffff';
+  const bg  = team?.primaryHex   ?? '#1c1917';
+  const ink = team?.secondaryHex ?? '#ffffff';
   const hairline = team ? needsHairline(team.primaryHex) : false;
-  const hasValue = card.value && card.value !== '-' && card.value.trim() !== '';
 
   const inner = (
     <div
-      className="flex w-full flex-col gap-2 px-4 py-4"
+      className="flex w-full gap-2 p-4"
       style={{
         background: bg,
-        color: fg,
+        minHeight: 124,
         boxShadow: hairline ? 'inset 0 0 0 1px rgba(0,0,0,.10)' : undefined,
       }}
     >
-      {/* Kind badge */}
-      <div className="flex items-center gap-2">
-        <span
-          className="rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest leading-none"
-          style={{ background: accent.glow, color: accent.badge, border: `1px solid ${accent.badge}` }}
-        >
+      {/* Left col: kind + team name */}
+      <div className="flex flex-1 flex-col justify-center gap-4">
+        <span className="text-[24px] font-bold leading-none" style={{ color: ink }}>
           {card.kind}
         </span>
         {team && (
-          <span className="text-[12px] font-semibold leading-none" style={{ color: withAlpha(fg, 0.55) }}>
-            {team.flagEmoji} {team.name}
+          <span className="text-[15px] font-medium leading-none" style={{ color: ink }}>
+            {team.flagEmoji}&nbsp;&nbsp;{team.name}
           </span>
         )}
       </div>
 
-      {/* Value — only shown when meaningful */}
-      {hasValue && (
-        <span className="text-[28px] font-bold leading-none tabular-nums" style={{ color: fg }}>
-          {card.value}
-        </span>
-      )}
-
-      {/* Blurb */}
-      <p className="text-[13px] font-medium leading-snug" style={{ color: withAlpha(fg, 0.78) }}>
-        {card.blurb}
-      </p>
+      {/* Right col: blurb */}
+      <div className="flex flex-1 items-end">
+        <p className="text-[16px] font-semibold leading-snug" style={{ color: ink }}>
+          {card.blurb}
+        </p>
+      </div>
     </div>
   );
 
