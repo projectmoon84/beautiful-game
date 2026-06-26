@@ -63,7 +63,7 @@ export default function AdminFixtures() {
     supabase.from('fixtures').select('*').order('kickoff_utc').then(({ data }) => {
       if (!data) return;
       setFixtures(data.map(r => ({
-        id: r.id, homeTeamId: r.home_team_id, awayTeamId: r.away_team_id,
+        id: r.id, homeTeamId: r.home_team_id ?? '', awayTeamId: r.away_team_id ?? '',
         venueId: r.venue_id, groupId: r.group_id ?? '',
         kickoffUtc: r.kickoff_utc, stage: r.stage as Fixture['stage'],
         status: r.status as FixtureStatus,
