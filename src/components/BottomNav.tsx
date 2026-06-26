@@ -30,8 +30,13 @@ const TABS = [
 export default function BottomNav() {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex h-24 items-start justify-between px-10 pb-6 pt-2"
-      style={{ background: 'var(--black)', color: 'var(--surface)' }}
+      className="fixed bottom-0 left-0 right-0 z-50 flex items-start justify-between px-10 pt-2"
+      style={{
+        background: 'var(--black)',
+        color: 'var(--surface)',
+        paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
+        height: 'calc(6rem + env(safe-area-inset-bottom))',
+      }}
     >
       {TABS.map(({ to, label, end, icon }) => (
         <NavLink
