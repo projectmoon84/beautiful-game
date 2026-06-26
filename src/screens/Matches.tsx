@@ -5,7 +5,12 @@ import { isoDay } from '../utils/format';
 import { isFixtureObscured } from '../utils/seenFixtures';
 import DateScroller from '../components/DateScroller';
 import FixtureCard from '../components/FixtureCard';
+import KnockoutCard from '../components/KnockoutCard';
 import InlineStandings from '../components/InlineStandings';
+
+const STAGE_SHORT: Record<string, string> = {
+  r32: 'R32', r16: 'R16', qf: 'QF', sf: 'SF', final: 'Final',
+};
 
 function findDefaultDate(dates: string[]): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -70,8 +75,25 @@ export default function Matches() {
         {dayFixtures.length > 0 ? (
           <div className="flex flex-col">
             {dayFixtures.map(f => {
-              const home = dataService.team(f.homeTeamId);
-              const away = dataService.team(f.awayTeamId);
+              const home = dataService.team(f.homeTeamId) ?? null;
+              const away = dataService.team(f.awayTeamId) ?? null;
+
+              if (f.stage !== 'group') {
+                const stageLabel = STAGE_SHORT[f.stage] ?? f.stage.toUpperCase();
+                return (
+                  <KnockoutCard
+                    key={f.id}
+                    fixture={f}
+                    homeTeam={home}
+                    awayTeam={away}
+                    homePlaceholder={f.homePlaceholder}
+                    awayPlaceholder={f.awayPlaceholder}
+                    stageLabel={stageLabel}
+                    onClick={home && away ? () => navigate(`/match/${f.id}`) : undefined}
+                  />
+                );
+              }
+
               if (!home || !away) return null;
               return (
                 <FixtureCard
