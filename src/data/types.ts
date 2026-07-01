@@ -1,6 +1,6 @@
 // ── Primitive types ──────────────────────────────────────────────
 export type FormResult = 'W' | 'D' | 'L';
-export type EventType = 'goal' | 'own_goal' | 'penalty' | 'penalty_missed' | 'var_goal' | 'var_cancelled' | 'yellow' | 'second_yellow' | 'red' | 'sub';
+export type EventType = 'goal' | 'own_goal' | 'penalty' | 'penalty_missed' | 'var_goal' | 'var_cancelled' | 'yellow' | 'second_yellow' | 'red' | 'sub' | 'shootout_goal' | 'shootout_miss' | 'shootout_saved';
 export type FixtureStatus = 'scheduled' | 'live' | 'finished';
 export type Stage = 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'final';
 export type Position = 'GK' | 'DEF' | 'MID' | 'FWD';
@@ -62,6 +62,8 @@ export interface Fixture {
   minute?: number;      // live only
   homeScore?: number;
   awayScore?: number;
+  homePenaltyScore?: number;
+  awayPenaltyScore?: number;
   manOfMatchPlayerId?: string;
 }
 

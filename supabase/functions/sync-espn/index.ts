@@ -36,10 +36,38 @@ type DbFixture = {
   id: string;
   home_team_id: string | null;
   away_team_id: string | null;
+  home_placeholder?: string | null;
+  away_placeholder?: string | null;
+  group_id?: string | null;
   kickoff_utc: string;
   stage: string;
   status: string;
+  home_score?: number | null;
+  away_score?: number | null;
+  home_penalty_score?: number | null;
+  away_penalty_score?: number | null;
   edited_by_admin: boolean;
+};
+
+type TeamRow = {
+  id: string;
+  group_id: string;
+};
+
+type GroupRankingRow = {
+  teamId: string;
+  groupId: string;
+  played: number;
+  points: number;
+  goalDiff: number;
+  goalsFor: number;
+  goalsAgainst: number;
+};
+
+type H2HStats = {
+  points: number;
+  goalDiff: number;
+  goalsFor: number;
 };
 
 type EspnCompetitor = {
@@ -282,18 +310,26 @@ function eventMinute(detail: EspnDetail): number | null {
   return null;
 }
 
-function mapEventType(detail: EspnDetail): 'goal' | 'own_goal' | 'penalty' | 'yellow' | 'red' | 'sub' | null {
+function mapEventType(detail: EspnDetail): 'goal' | 'own_goal' | 'penalty' | 'penalty_missed' | 'yellow' | 'red' | 'sub' | 'shootout_goal' | 'shootout_miss' | 'shootout_saved' | null {
   const text = [
     detail.type?.text,
     detail.type?.abbreviation,
     detail.text,
   ].filter(Boolean).join(' ').toLowerCase();
 
+  if (text.includes('shootout') || text.includes('penalty shoot')) {
+    if (text.includes('save') || text.includes('saved')) return 'shootout_saved';
+    if (text.includes('miss')) return 'shootout_miss';
+    if (detail.scoringPlay || text.includes('goal') || text.includes('made') || text.includes('scored')) {
+      return 'shootout_goal';
+    }
+  }
   if (detail.redCard || text.includes('red card')) return 'red';
   if (detail.yellowCard || text.includes('yellow card')) return 'yellow';
   if (text.includes('substitution')) return 'sub';
   if (detail.scoringPlay || text.includes('goal')) {
     if (detail.ownGoal || text.includes('own goal')) return 'own_goal';
+    if (text.includes('missed penalty') || text.includes('penalty missed')) return 'penalty_missed';
     if (detail.penaltyKick || text.includes('penalty')) return 'penalty';
     return 'goal';
   }
@@ -355,6 +391,311 @@ function eventId(fixtureId: string, detail: EspnDetail, type: string, teamCode: 
   return `${fixtureId}-espn-${clock}-${teamCode}-${espnType}-${athleteId}`;
 }
 
+function shootoutScoreFromDetails(details: EspnDetail[]): { home: number; away: number } | null {
+  for (const detail of details) {
+    const text = detail.text ?? '';
+    if (!/penalty shootout ends/i.test(text)) continue;
+    const scores = [...text.matchAll(/\((\d+)\)/g)].map(match => Number(match[1]));
+    if (scores.length >= 2 && scores.every(Number.isFinite)) {
+      return { home: scores[0], away: scores[1] };
+    }
+  }
+  return null;
+}
+
+function matchNumberFromFixtureId(id: string): number | null {
+  const match = id.match(/^OF-(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function knockoutWinner(fixture: DbFixture | undefined): string | null {
+  if (!fixture || fixture.status !== 'finished') return null;
+  if (!fixture.home_team_id || !fixture.away_team_id) return null;
+  if (fixture.home_score === null || fixture.home_score === undefined) return null;
+  if (fixture.away_score === null || fixture.away_score === undefined) return null;
+  if (fixture.home_score === fixture.away_score) return null;
+  return fixture.home_score > fixture.away_score ? fixture.home_team_id : fixture.away_team_id;
+}
+
+function emptyRanking(team: TeamRow): GroupRankingRow {
+  return {
+    teamId: team.id,
+    groupId: team.group_id,
+    played: 0,
+    points: 0,
+    goalDiff: 0,
+    goalsFor: 0,
+    goalsAgainst: 0,
+  };
+}
+
+function h2hAmong(teamIds: Set<string>, groupId: string, fixtures: DbFixture[]): Map<string, H2HStats> {
+  const stats = new Map<string, H2HStats>();
+  for (const id of teamIds) stats.set(id, { points: 0, goalDiff: 0, goalsFor: 0 });
+
+  for (const fixture of fixtures) {
+    if (fixture.group_id !== groupId || fixture.status !== 'finished') continue;
+    if (!fixture.home_team_id || !fixture.away_team_id) continue;
+    if (!teamIds.has(fixture.home_team_id) || !teamIds.has(fixture.away_team_id)) continue;
+    if (fixture.home_score === null || fixture.home_score === undefined) continue;
+    if (fixture.away_score === null || fixture.away_score === undefined) continue;
+
+    const home = stats.get(fixture.home_team_id)!;
+    const away = stats.get(fixture.away_team_id)!;
+    home.goalsFor += fixture.home_score;
+    home.goalDiff += fixture.home_score - fixture.away_score;
+    away.goalsFor += fixture.away_score;
+    away.goalDiff += fixture.away_score - fixture.home_score;
+
+    if (fixture.home_score > fixture.away_score) {
+      home.points += 3;
+    } else if (fixture.home_score < fixture.away_score) {
+      away.points += 3;
+    } else {
+      home.points += 1;
+      away.points += 1;
+    }
+  }
+
+  return stats;
+}
+
+function resolveTiedRows(tied: GroupRankingRow[], groupId: string, fixtures: DbFixture[]): GroupRankingRow[] {
+  if (tied.length <= 1) return tied;
+
+  const h2h = h2hAmong(new Set(tied.map(row => row.teamId)), groupId, fixtures);
+  const sorted = [...tied].sort((a, b) => {
+    const ah = h2h.get(a.teamId)!;
+    const bh = h2h.get(b.teamId)!;
+    return bh.points - ah.points || bh.goalDiff - ah.goalDiff || bh.goalsFor - ah.goalsFor;
+  });
+
+  const result: GroupRankingRow[] = [];
+  let index = 0;
+  while (index < sorted.length) {
+    const pivot = h2h.get(sorted[index].teamId)!;
+    const sub = [sorted[index]];
+    while (
+      index + sub.length < sorted.length &&
+      h2h.get(sorted[index + sub.length].teamId)!.points === pivot.points &&
+      h2h.get(sorted[index + sub.length].teamId)!.goalDiff === pivot.goalDiff &&
+      h2h.get(sorted[index + sub.length].teamId)!.goalsFor === pivot.goalsFor
+    ) {
+      sub.push(sorted[index + sub.length]);
+    }
+    result.push(...(sub.length < tied.length ? resolveTiedRows(sub, groupId, fixtures) : sub));
+    index += sub.length;
+  }
+
+  return result;
+}
+
+function sortGroupRows(rows: GroupRankingRow[], groupId: string, fixtures: DbFixture[]): GroupRankingRow[] {
+  const byPoints = new Map<number, GroupRankingRow[]>();
+  for (const row of rows) byPoints.set(row.points, [...(byPoints.get(row.points) ?? []), row]);
+
+  return [...byPoints.keys()].sort((a, b) => b - a).flatMap(points => {
+    const group = byPoints.get(points)!;
+    if (group.length === 1) return group;
+
+    const byOverall = [...group].sort((a, b) =>
+      b.goalDiff - a.goalDiff ||
+      b.goalsFor - a.goalsFor ||
+      a.goalsAgainst - b.goalsAgainst ||
+      a.teamId.localeCompare(b.teamId)
+    );
+
+    const result: GroupRankingRow[] = [];
+    let index = 0;
+    while (index < byOverall.length) {
+      const pivot = byOverall[index];
+      const sub = [pivot];
+      while (
+        index + sub.length < byOverall.length &&
+        byOverall[index + sub.length].goalDiff === pivot.goalDiff &&
+        byOverall[index + sub.length].goalsFor === pivot.goalsFor
+      ) {
+        sub.push(byOverall[index + sub.length]);
+      }
+      result.push(...(sub.length === 1 ? sub : resolveTiedRows(sub, groupId, fixtures)));
+      index += sub.length;
+    }
+
+    return result;
+  });
+}
+
+function buildGroupRankings(teams: TeamRow[], fixtures: DbFixture[]): Map<string, GroupRankingRow[]> {
+  const byGroup = new Map<string, GroupRankingRow[]>();
+  const byTeam = new Map<string, GroupRankingRow>();
+
+  for (const team of teams) {
+    if (!team.group_id) continue;
+    const row = emptyRanking(team);
+    byTeam.set(team.id, row);
+    byGroup.set(team.group_id, [...(byGroup.get(team.group_id) ?? []), row]);
+  }
+
+  for (const fixture of fixtures) {
+    if (fixture.stage !== 'group' || fixture.status !== 'finished') continue;
+    if (!fixture.home_team_id || !fixture.away_team_id || !fixture.group_id) continue;
+    if (fixture.home_score === null || fixture.home_score === undefined) continue;
+    if (fixture.away_score === null || fixture.away_score === undefined) continue;
+
+    const home = byTeam.get(fixture.home_team_id);
+    const away = byTeam.get(fixture.away_team_id);
+    if (!home || !away) continue;
+
+    home.played++;
+    away.played++;
+    home.goalsFor += fixture.home_score;
+    home.goalsAgainst += fixture.away_score;
+    away.goalsFor += fixture.away_score;
+    away.goalsAgainst += fixture.home_score;
+
+    if (fixture.home_score > fixture.away_score) {
+      home.points += 3;
+    } else if (fixture.home_score < fixture.away_score) {
+      away.points += 3;
+    } else {
+      home.points += 1;
+      away.points += 1;
+    }
+  }
+
+  for (const [groupId, rows] of byGroup) {
+    const rankedRows = rows.map(row => ({ ...row, goalDiff: row.goalsFor - row.goalsAgainst }));
+    byGroup.set(groupId, sortGroupRows(rankedRows, groupId, fixtures));
+  }
+
+  return byGroup;
+}
+
+function groupComplete(groupRows: GroupRankingRow[] | undefined): boolean {
+  return Boolean(groupRows?.length === 4 && groupRows.every(row => row.played === 3));
+}
+
+function resolveSlotLabel(
+  label: string | null | undefined,
+  context: {
+    fixtureByMatchNum: Map<number, DbFixture>;
+    groupRankings: Map<string, GroupRankingRow[]>;
+    qualifiedThirds: Map<string, string> | null;
+  },
+): string | null {
+  if (!label) return null;
+
+  const winnerMatch = label.match(/^Winner · Match (\d+)$/);
+  if (winnerMatch) {
+    return knockoutWinner(context.fixtureByMatchNum.get(Number(winnerMatch[1])));
+  }
+
+  const groupSlot = label.match(/^(Winner|Runner-up) · Group ([A-L])$/);
+  if (groupSlot) {
+    const rows = context.groupRankings.get(groupSlot[2]);
+    if (!groupComplete(rows)) return null;
+    return rows?.[groupSlot[1] === 'Winner' ? 0 : 1]?.teamId ?? null;
+  }
+
+  const thirdSlot = label.match(/^Best 3rd · ([A-L](?:\/[A-L])*)$/);
+  if (thirdSlot && context.qualifiedThirds) {
+    const candidates = thirdSlot[1]
+      .split('/')
+      .map(groupId => context.qualifiedThirds?.get(groupId))
+      .filter((teamId): teamId is string => Boolean(teamId));
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  return null;
+}
+
+async function resolveBracketSlotsFromResults(
+  log: string[],
+  syncedAt: string,
+): Promise<number> {
+  const { data: fixtureData, error: fixtureError } = await supabaseAdmin
+    .from('fixtures')
+    .select('id, home_team_id, away_team_id, home_placeholder, away_placeholder, group_id, kickoff_utc, stage, status, home_score, away_score, edited_by_admin')
+    .order('kickoff_utc');
+  if (fixtureError) throw fixtureError;
+
+  const fixtures = (fixtureData ?? []) as DbFixture[];
+  const unresolved = fixtures.filter(fixture =>
+    fixture.stage !== 'group' &&
+    !fixture.edited_by_admin &&
+    (!fixture.home_team_id || !fixture.away_team_id)
+  );
+  if (unresolved.length === 0) return 0;
+
+  const { data: teamData, error: teamError } = await supabaseAdmin
+    .from('teams')
+    .select('id, group_id');
+  if (teamError) throw teamError;
+
+  const groupRankings = buildGroupRankings((teamData ?? []) as TeamRow[], fixtures);
+  const allGroupsComplete = [...groupRankings.values()].length >= 12 &&
+    [...groupRankings.values()].every(groupComplete);
+  const qualifiedThirds = allGroupsComplete
+    ? new Map(
+        [...groupRankings.entries()]
+          .map(([groupId, rows]) => ({ groupId, row: rows[2] }))
+          .filter(entry => entry.row)
+          .sort((a, b) =>
+            b.row.points - a.row.points ||
+            b.row.goalDiff - a.row.goalDiff ||
+            b.row.goalsFor - a.row.goalsFor ||
+            a.row.goalsAgainst - b.row.goalsAgainst ||
+            a.row.teamId.localeCompare(b.row.teamId)
+          )
+          .slice(0, 8)
+          .map(entry => [entry.groupId, entry.row.teamId] as const),
+      )
+    : null;
+
+  const fixtureByMatchNum = new Map<number, DbFixture>();
+  for (const fixture of fixtures) {
+    const num = matchNumberFromFixtureId(fixture.id);
+    if (num !== null) fixtureByMatchNum.set(num, fixture);
+  }
+
+  let updated = 0;
+  for (const fixture of unresolved) {
+    const context = { fixtureByMatchNum, groupRankings, qualifiedThirds };
+    const homeTeamId = fixture.home_team_id ?? resolveSlotLabel(fixture.home_placeholder, context);
+    const awayTeamId = fixture.away_team_id ?? resolveSlotLabel(fixture.away_placeholder, context);
+
+    if (homeTeamId === fixture.home_team_id && awayTeamId === fixture.away_team_id) continue;
+    if (!homeTeamId && !awayTeamId) continue;
+
+    const { data, error } = await supabaseAdmin
+      .from('fixtures')
+      .update({
+        home_team_id: homeTeamId ?? fixture.home_team_id,
+        away_team_id: awayTeamId ?? fixture.away_team_id,
+        home_placeholder: homeTeamId ? null : fixture.home_placeholder,
+        away_placeholder: awayTeamId ? null : fixture.away_placeholder,
+        source: 'bracket-logic',
+        updated_at: syncedAt,
+      })
+      .eq('id', fixture.id)
+      .eq('edited_by_admin', false)
+      .select('id, home_team_id, away_team_id')
+      .maybeSingle();
+    if (error) throw error;
+
+    if (data) {
+      fixture.home_team_id = data.home_team_id;
+      fixture.away_team_id = data.away_team_id;
+      const num = matchNumberFromFixtureId(fixture.id);
+      if (num !== null) fixtureByMatchNum.set(num, fixture);
+      log.push(`Bracket logic ${fixture.id}: ${data.home_team_id ?? '?'} vs ${data.away_team_id ?? '?'}`);
+      updated++;
+    }
+  }
+
+  return updated;
+}
+
 // Maps ESPN statistic.name values to match_team_stats columns.
 // Keys are lowercase trimmed ESPN names; values are DB column names.
 const STAT_NAME_MAP: Record<string, string> = {
@@ -410,7 +751,7 @@ function formatError(error: unknown): string {
 }
 
 // ── Bracket slot hydration ────────────────────────────────────────────────────
-// Runs automatically whenever null-team knockout fixtures exist within 14 days.
+// Runs automatically whenever incomplete-team knockout fixtures exist within 14 days.
 // Matches each DB fixture to an ESPN scoreboard event by kickoff time (±30 min),
 // resolves team IDs from ESPN's team.abbreviation, and writes them back to the DB.
 async function hydrateKnockoutSlots(
@@ -422,9 +763,9 @@ async function hydrateKnockoutSlots(
 
   const { data: nullSlots } = await supabaseAdmin
     .from('fixtures')
-    .select('id, kickoff_utc, stage, edited_by_admin')
+    .select('id, home_team_id, away_team_id, kickoff_utc, stage, edited_by_admin')
     .neq('stage', 'group')
-    .is('home_team_id', null)
+    .or('home_team_id.is.null,away_team_id.is.null')
     .gte('kickoff_utc', now.toISOString())
     .lte('kickoff_utc', windowEnd.toISOString())
     .eq('edited_by_admin', false);
@@ -486,7 +827,14 @@ async function hydrateKnockoutSlots(
 
     const { error } = await supabaseAdmin
       .from('fixtures')
-      .update({ home_team_id: homeId, away_team_id: awayId, source: 'espn', updated_at: syncedAt })
+      .update({
+        home_team_id: homeId,
+        away_team_id: awayId,
+        home_placeholder: null,
+        away_placeholder: null,
+        source: 'espn',
+        updated_at: syncedAt,
+      })
       .eq('id', dbFixture.id)
       .eq('edited_by_admin', false);
 
@@ -522,9 +870,12 @@ Deno.serve(async (request) => {
     if (body.reason) log.push(`Reason: ${body.reason}`);
     if (targetFixtureId) log.push(`Target fixture: ${targetFixtureId}`);
 
-    // Fill any null-team knockout slots from the ESPN bracket before doing live sync.
+    // Fill known bracket slots from results first, then ask ESPN for upcoming
+    // incomplete slots whose teams are already visible in its bracket feed.
+    slotsUpdated += await resolveBracketSlotsFromResults(log, syncedAt);
+
     const hydration = await hydrateKnockoutSlots(log, syncedAt);
-    slotsUpdated = hydration.slotsUpdated;
+    slotsUpdated += hydration.slotsUpdated;
     apiRequests += hydration.apiRequests;
 
     const { data: dbFixtures, error: fixturesError } = await supabaseAdmin
@@ -597,6 +948,8 @@ Deno.serve(async (request) => {
       minute: number | null;
       home_score: number | null;
       away_score: number | null;
+      home_penalty_score?: number | null;
+      away_penalty_score?: number | null;
       source: string;
       updated_at: string;
     }> = [];
@@ -657,6 +1010,7 @@ Deno.serve(async (request) => {
         fixtureUpdates++;
       }
       log.push(`Updated ${fixtureUpdates} fixture statuses/scores`);
+      slotsUpdated += await resolveBracketSlotsFromResults(log, syncedAt);
     } else {
       log.push('No matching ESPN fixtures to update');
     }
@@ -692,6 +1046,21 @@ Deno.serve(async (request) => {
             ...(summary?.competitions?.[0]?.details ?? []),
             ...(event.competitions?.[0]?.details ?? []),
           ];
+      const shootoutScore = shootoutScoreFromDetails(details);
+      if (shootoutScore) {
+        const { error } = await supabaseAdmin
+          .from('fixtures')
+          .update({
+            home_penalty_score: shootoutScore.home,
+            away_penalty_score: shootoutScore.away,
+            source: SOURCE,
+            updated_at: syncedAt,
+          })
+          .eq('id', fixtureId)
+          .eq('edited_by_admin', false);
+        if (error) log.push(`shootout score update error ${fixtureId}: ${formatError(error)}`);
+        else log.push(`Shootout score ${fixtureId}: ${shootoutScore.home}-${shootoutScore.away}`);
+      }
       possibleEvents += details.length;
       log.push(`ESPN details ${event.id} -> ${details.length} details`);
 

@@ -108,6 +108,31 @@ function plannedFixtureJobs(fixture: FixtureRow, ukDate: string): PlannedJob[] {
   }));
 }
 
+async function ensureFixtureJobsForDate(ukDate: string, log: string[]): Promise<{ fixtures: number; jobs: number }> {
+  const { data: fixtures, error: fixtureError } = await supabaseAdmin
+    .from('fixtures')
+    .select('id, kickoff_utc, stage, status, home_team_id, away_team_id')
+    .not('home_team_id', 'is', null)
+    .not('away_team_id', 'is', null)
+    .order('kickoff_utc');
+  if (fixtureError) throw fixtureError;
+
+  const todayFixtures = ((fixtures ?? []) as FixtureRow[])
+    .filter(fixture => fixtureUkDate(fixture.kickoff_utc) === ukDate);
+  const jobs = todayFixtures.flatMap(fixture => plannedFixtureJobs(fixture, ukDate));
+  const futureOrRecentJobs = jobs.filter(job => new Date(job.run_at).getTime() >= Date.now() - 2 * 60_000);
+
+  if (futureOrRecentJobs.length > 0) {
+    const { error: jobError } = await supabaseAdmin
+      .from('sync_schedule_jobs')
+      .upsert(futureOrRecentJobs, { onConflict: 'dedupe_key', ignoreDuplicates: true });
+    if (jobError) throw jobError;
+  }
+
+  log.push(`Ensured ${futureOrRecentJobs.length} jobs for ${todayFixtures.length} resolved fixtures on ${ukDate}`);
+  return { fixtures: todayFixtures.length, jobs: futureOrRecentJobs.length };
+}
+
 async function planTodayIfNeeded(now: Date, log: string[]) {
   const { date: ukDate, hour } = ukParts(now);
   if (hour < 4) {
@@ -123,39 +148,21 @@ async function planTodayIfNeeded(now: Date, log: string[]) {
   if (existingError) throw existingError;
   if (existing) {
     log.push(`Planner already ran for ${ukDate}`);
+    await ensureFixtureJobsForDate(ukDate, log);
     return;
   }
 
-  const { data: fixtures, error: fixtureError } = await supabaseAdmin
-    .from('fixtures')
-    .select('id, kickoff_utc, stage, status, home_team_id, away_team_id')
-    .not('home_team_id', 'is', null)
-    .not('away_team_id', 'is', null)
-    .order('kickoff_utc');
-  if (fixtureError) throw fixtureError;
-
-  const todayFixtures = ((fixtures ?? []) as FixtureRow[])
-    .filter(fixture => fixtureUkDate(fixture.kickoff_utc) === ukDate);
-
-  const jobs: PlannedJob[] = todayFixtures.flatMap(fixture => plannedFixtureJobs(fixture, ukDate));
-
+  const planned = await ensureFixtureJobsForDate(ukDate, log);
   const { error: dayError } = await supabaseAdmin
     .from('sync_schedule_days')
     .insert({
       uk_date: ukDate,
-      fixture_count: todayFixtures.length,
-      notes: `Planned ${jobs.length} sync jobs after 04:00 UK`,
+      fixture_count: planned.fixtures,
+      notes: `Planned ${planned.jobs} sync jobs after 04:00 UK`,
     });
   if (dayError) throw dayError;
 
-  if (jobs.length > 0) {
-    const { error: jobError } = await supabaseAdmin
-      .from('sync_schedule_jobs')
-      .upsert(jobs, { onConflict: 'dedupe_key', ignoreDuplicates: true });
-    if (jobError) throw jobError;
-  }
-
-  log.push(`Planned ${jobs.length} jobs for ${todayFixtures.length} fixtures on ${ukDate}`);
+  log.push(`Planner recorded ${planned.jobs} jobs for ${planned.fixtures} fixtures on ${ukDate}`);
 }
 
 async function espnJobsDoneToday(ukDate: string): Promise<number> {

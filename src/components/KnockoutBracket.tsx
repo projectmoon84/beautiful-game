@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Fixture, Stage } from '../data/types';
 import { dataService } from '../data/dataService';
+import { resultQualifier } from '../utils/matchResult';
+import { isFixtureObscured } from '../utils/seenFixtures';
 import KnockoutCard from './KnockoutCard';
 
 type KnockoutStage = Exclude<Stage, 'group'>;
@@ -137,6 +139,8 @@ export default function KnockoutBracket() {
               homePlaceholder={resolveLabel(f.homePlaceholder)}
               awayPlaceholder={resolveLabel(f.awayPlaceholder)}
               stageLabel={STAGE_SHORT[currentStage]}
+              obscured={isFixtureObscured(f.id, f.status, f.homeScore ?? 0, f.awayScore ?? 0)}
+              resultQualifier={resultQualifier(f, dataService.matchEvents(f.id))}
               onClick={home && away ? () => navigate(`/match/${f.id}`) : undefined}
             />
           );

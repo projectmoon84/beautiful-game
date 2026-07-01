@@ -4,9 +4,10 @@ import { supabase } from '../../data/supabase';
 import type { Team, Player, Fixture, MatchEvent, FixtureStatus, EventType, Position } from '../../data/types';
 
 const STATUS_OPTS: FixtureStatus[] = ['scheduled', 'live', 'finished'];
-const EVENT_TYPES: EventType[] = ['goal', 'own_goal', 'penalty', 'penalty_missed', 'var_goal', 'var_cancelled', 'yellow', 'second_yellow', 'red', 'sub'];
+const EVENT_TYPES: EventType[] = ['goal', 'own_goal', 'penalty', 'penalty_missed', 'var_goal', 'var_cancelled', 'yellow', 'second_yellow', 'red', 'sub', 'shootout_goal', 'shootout_miss', 'shootout_saved'];
 const ICON: Record<EventType, string> = {
   goal: '⚽', own_goal: '↩⚽', penalty: '⚽(P)', penalty_missed: '⚽(M)', var_goal: '⚽(V)', var_cancelled: '⚽(X)', yellow: '🟨', second_yellow: '🟨🟥', red: '🟥', sub: '🔄',
+  shootout_goal: 'P✓', shootout_miss: 'P×', shootout_saved: 'P▣',
 };
 const SHOW_ASSIST: Set<EventType> = new Set(['goal', 'own_goal', 'penalty']);
 

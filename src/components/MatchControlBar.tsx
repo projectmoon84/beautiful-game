@@ -3,8 +3,8 @@ export type MatchTab = 'timeline' | 'lineups' | 'stats';
 export type MatchControlBarStatus =
   | { kind: 'upcoming'; date: string; time: string }
   | { kind: 'live'; minute: number }
-  | { kind: 'replaying'; minute: number }
-  | { kind: 'finished' };
+  | { kind: 'replaying'; minute: number; label?: string }
+  | { kind: 'finished'; label?: string };
 
 interface Props {
   activeTab: MatchTab;
@@ -13,6 +13,7 @@ interface Props {
 }
 
 function formatMinute(m: number) {
+  if (m >= 121) return 'PEN';
   return m > 90 ? `90+${m - 90}'` : `${m}'`;
 }
 
@@ -85,7 +86,7 @@ function StatusCell({
         <div className="flex items-center gap-1 rounded-full bg-black/60 py-0.5 pl-1.5 pr-2 outline outline-1 outline-white/20">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60" />
           <span className="text-[10px] font-semibold leading-none text-white/80">
-            {formatMinute(status.minute)}
+            {status.label ?? formatMinute(status.minute)}
           </span>
         </div>
       ) : status.kind === 'upcoming' ? (
@@ -108,7 +109,7 @@ function StatusCell({
           className="text-[11px] font-semibold uppercase leading-none tracking-wide"
           style={{ color: isActive ? '#00000060' : '#ffffff60' }}
         >
-          FT
+          {status.label ?? 'FT'}
         </span>
       )}
     </button>

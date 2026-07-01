@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'react';
 import type { Fixture, Team } from '../data/types';
 import { formatDate, formatTime } from '../utils/format';
+import type { ResultQualifier } from '../utils/matchResult';
+import { resultQualifierLabel } from '../utils/matchResult';
+import ScoreDigit from './ScoreDigit';
 
 interface FixtureCardProps {
   fixture: Fixture;
   homeTeam: Team;
   awayTeam: Team;
   obscured?: boolean;
+  resultQualifier?: ResultQualifier;
   onClick?: () => void;
 }
 
@@ -22,7 +25,14 @@ interface FixtureCardProps {
  *
  * Scheduled cards use xl codes to fill the extra space; live/finished use lg.
  */
-export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, obscured = false, onClick }: FixtureCardProps) {
+export default function FixtureCard({
+  fixture: f,
+  homeTeam: h,
+  awayTeam: a,
+  obscured = false,
+  resultQualifier = null,
+  onClick,
+}: FixtureCardProps) {
   const isLive = f.status === 'live';
   const isFinished = f.status === 'finished';
 
@@ -32,7 +42,10 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, obsc
   const stageLabel = f.groupId
     ? `Group ${f.groupId}`
     : (STAGE_SHORT[f.stage] ?? f.stage.toUpperCase());
-  const rightLabel = isFinished ? `FT · ${stageLabel}` : stageLabel;
+  const qualifierLabel = obscured ? null : resultQualifierLabel(resultQualifier);
+  const rightLabel = isFinished
+    ? `${qualifierLabel ?? 'FT'} · ${stageLabel}`
+    : stageLabel;
 
   const homeBg = h.primaryHex;
   const awayBg = a.primaryHex;
@@ -111,58 +124,5 @@ export default function FixtureCard({ fixture: f, homeTeam: h, awayTeam: a, obsc
         </div>
       )}
     </button>
-  );
-}
-
-// 3×3 pixel grid scaled up to a large canvas → each "pixel" is big and chunky
-const GRID = 5;
-const CANVAS_W = 54;
-const CANVAS_H = 54;
-
-function ScoreDigit({ value, ink, obscured }: { value: number; ink: string; obscured: boolean }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const cols = GRID;
-    const rows = GRID;
-
-    // Draw digit at tiny resolution on an offscreen canvas
-    const off = document.createElement('canvas');
-    off.width = cols;
-    off.height = rows;
-    const octx = off.getContext('2d')!;
-    octx.fillStyle = ink;
-    octx.font = `700 ${Math.round(rows * 0.88)}px system-ui, sans-serif`;
-    octx.textBaseline = 'middle';
-    octx.textAlign = 'center';
-    octx.fillText(String(value), cols / 2, rows / 2);
-
-    // Scale back up with no smoothing → big chunky blocks
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(off, 0, 0, cols, rows, 0, 0, CANVAS_W, CANVAS_H);
-  }, [value, ink]);
-
-  if (!obscured) {
-    return (
-      <span className="shrink-0 text-[40px] font-bold leading-[0.9]" style={{ color: ink }}>
-        {value}
-      </span>
-    );
-  }
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={CANVAS_W}
-      height={CANVAS_H}
-      className="shrink-0"
-      style={{ imageRendering: 'pixelated' }}
-    />
   );
 }

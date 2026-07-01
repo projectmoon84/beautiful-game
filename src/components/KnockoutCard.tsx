@@ -1,5 +1,8 @@
 import type { Fixture, Team } from '../data/types';
 import { formatDate, formatTime } from '../utils/format';
+import type { ResultQualifier } from '../utils/matchResult';
+import { resultQualifierLabel } from '../utils/matchResult';
+import ScoreDigit from './ScoreDigit';
 
 const TBD_BG  = '#14161a';
 const TBD_INK = 'rgba(255,255,255,0.22)';
@@ -11,6 +14,8 @@ export interface KnockoutCardProps {
   homePlaceholder?: string;
   awayPlaceholder?: string;
   stageLabel: string;
+  obscured?: boolean;
+  resultQualifier?: ResultQualifier;
   onClick?: () => void;
 }
 
@@ -21,6 +26,8 @@ export default function KnockoutCard({
   homePlaceholder,
   awayPlaceholder,
   stageLabel,
+  obscured = false,
+  resultQualifier = null,
   onClick,
 }: KnockoutCardProps) {
   const isLive     = f.status === 'live';
@@ -32,7 +39,8 @@ export default function KnockoutCard({
   const awayBg  = awayTeam?.primaryHex   ?? TBD_BG;
   const awayInk = awayTeam?.secondaryHex ?? TBD_INK;
 
-  const rightLabel = isFinished ? `FT · ${stageLabel}` : stageLabel;
+  const qualifierLabel = obscured ? null : resultQualifierLabel(resultQualifier);
+  const rightLabel = isFinished ? `${qualifierLabel ?? 'FT'} · ${stageLabel}` : stageLabel;
 
   return (
     <button
@@ -67,9 +75,7 @@ export default function KnockoutCard({
               <PlaceholderSlot label={homePlaceholder} ink={homeInk} />
             )}
             {showScore && homeTeam && (
-              <span className="shrink-0 text-[40px] font-bold leading-[0.9]" style={{ color: homeInk }}>
-                {f.homeScore ?? 0}
-              </span>
+              <ScoreDigit value={f.homeScore ?? 0} ink={homeInk} obscured={obscured} />
             )}
           </div>
         </div>
@@ -83,9 +89,7 @@ export default function KnockoutCard({
           </div>
           <div className="flex items-end justify-between gap-2">
             {showScore && awayTeam && (
-              <span className="shrink-0 text-[40px] font-bold leading-[0.9]" style={{ color: awayInk }}>
-                {f.awayScore ?? 0}
-              </span>
+              <ScoreDigit value={f.awayScore ?? 0} ink={awayInk} obscured={obscured} />
             )}
             {awayTeam ? (
               <span

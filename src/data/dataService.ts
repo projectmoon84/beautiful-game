@@ -56,6 +56,8 @@ type FixtureRow = {
   minute: number | null;
   home_score: number | null;
   away_score: number | null;
+  home_penalty_score?: number | null;
+  away_penalty_score?: number | null;
   man_of_match_player_id: string | null;
 };
 
@@ -158,6 +160,8 @@ function mapFixtureRow(row: FixtureRow): Fixture {
     minute:              row.minute              ?? undefined,
     homeScore:           row.home_score          ?? undefined,
     awayScore:           row.away_score          ?? undefined,
+    homePenaltyScore:    row.home_penalty_score  ?? undefined,
+    awayPenaltyScore:    row.away_penalty_score  ?? undefined,
     manOfMatchPlayerId:  row.man_of_match_player_id ?? undefined,
   };
 }

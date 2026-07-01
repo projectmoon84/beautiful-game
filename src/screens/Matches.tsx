@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataService } from '../data/dataService';
 import { isoDay } from '../utils/format';
 import { isFixtureObscured } from '../utils/seenFixtures';
+import { resultQualifier } from '../utils/matchResult';
 import DateScroller from '../components/DateScroller';
 import FixtureCard from '../components/FixtureCard';
 import KnockoutCard from '../components/KnockoutCard';
@@ -77,6 +78,9 @@ export default function Matches() {
             {dayFixtures.map(f => {
               const home = dataService.team(f.homeTeamId) ?? null;
               const away = dataService.team(f.awayTeamId) ?? null;
+              const events = dataService.matchEvents(f.id);
+              const obscured = isFixtureObscured(f.id, f.status, f.homeScore ?? 0, f.awayScore ?? 0);
+              const qualifier = resultQualifier(f, events);
 
               if (f.stage !== 'group') {
                 const stageLabel = STAGE_SHORT[f.stage] ?? f.stage.toUpperCase();
@@ -89,6 +93,8 @@ export default function Matches() {
                     homePlaceholder={f.homePlaceholder}
                     awayPlaceholder={f.awayPlaceholder}
                     stageLabel={stageLabel}
+                    obscured={obscured}
+                    resultQualifier={qualifier}
                     onClick={home && away ? () => navigate(`/match/${f.id}`) : undefined}
                   />
                 );
@@ -101,7 +107,8 @@ export default function Matches() {
                   fixture={f}
                   homeTeam={home}
                   awayTeam={away}
-                  obscured={isFixtureObscured(f.id, f.status, f.homeScore ?? 0, f.awayScore ?? 0)}
+                  obscured={obscured}
+                  resultQualifier={qualifier}
                   onClick={() => navigate(`/match/${f.id}`)}
                 />
               );
