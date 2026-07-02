@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import SubTabs from '../components/SubTabs';
 import { dataService } from '../data/dataService';
 import {
   ALL_TIME_AGE_AND_SPEED_RECORDS,
@@ -32,8 +33,14 @@ interface InvolvementRow {
   total: number;
 }
 
+type LiveRecordRow = AllTimeRecordRow & { sortValue: number };
+
 const PAPER = '#F5F1E4';
 const LEADERBOARD_LIMIT = 10;
+const VIEW_TABS = [
+  { id: '2026', label: '2026' },
+  { id: 'records', label: 'All time' },
+];
 const PLAYER_NAME_ALIASES: Record<string, string[]> = {
   'cristiano ronaldo': ['Ronaldo'],
   'kylian mbappe': ['Kylian Mbappé', 'Mbappé'],
@@ -78,7 +85,7 @@ function TournamentHero({ pulse }: { pulse: ReturnType<typeof tournamentPulse> }
   const [gpmWhole, gpmDec] = String(gpm).includes('.') ? String(gpm).split('.') : [String(gpm), undefined];
 
   return (
-    <div className="bg-black text-white">
+    <div className="bg-[var(--black)] text-white">
       <div className="flex items-center gap-2 px-4 py-5">
         <span className="flex-1 text-[24px] font-bold uppercase leading-none" style={{ color: PAPER }}>
           FIFA World Cup 2026
@@ -142,26 +149,11 @@ function CardCount({ value, color }: { value: number; color: string }) {
 
 function ViewToggle({ active, onChange }: { active: InsightsView; onChange: (v: InsightsView) => void }) {
   return (
-    <div className="flex h-[48px]">
-      {(['2026', 'records'] as const).map(v => {
-        const isActive = active === v;
-        return (
-          <button
-            key={v}
-            type="button"
-            onClick={() => onChange(v)}
-            className={[
-              'flex flex-1 items-center justify-center text-[13px] font-bold uppercase tracking-wider leading-none',
-              isActive
-                ? 'bg-[var(--surface)] text-black'
-                : 'bg-black text-[var(--surface)] ring-[6px] ring-inset ring-[var(--surface)]',
-            ].join(' ')}
-          >
-            {v}
-          </button>
-        );
-      })}
-    </div>
+    <SubTabs
+      tabs={VIEW_TABS}
+      activeId={active}
+      onChange={id => onChange(id as InsightsView)}
+    />
   );
 }
 
@@ -292,14 +284,14 @@ function LiveLeaderboard({
   return (
     <>
       <div className="flex flex-col gap-4 px-4 pb-5 pt-5" style={{ background: PAPER }}>
-        <span className="text-[24px] font-bold uppercase leading-none text-black">{title}</span>
+        <span className="text-[24px] font-bold uppercase leading-none text-[var(--black)]">{title}</span>
         <div className="flex items-center gap-2 px-2 py-1.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
           <span className="text-[10px] font-medium uppercase tracking-[0.04em] text-black/40">Record</span>
-          <span className="text-[12px] font-medium leading-none text-black">
+          <span className="text-[12px] font-medium leading-none text-[var(--black)]">
             {record.flag} {record.player}
           </span>
           {record.year ? <span className="text-[12px] italic font-medium text-black/40">{record.year}</span> : null}
-          <span className="ml-auto text-[15px] font-bold leading-none tabular-nums text-black">{record.value}</span>
+          <span className="ml-auto text-[15px] font-bold leading-none tabular-nums text-[var(--black)]">{record.value}</span>
         </div>
       </div>
 
@@ -348,14 +340,14 @@ function InvolvementBlock({ rows, onTeamClick }: { rows: InvolvementRow[]; onTea
   return (
     <>
       <div className="flex flex-col gap-4 px-4 pb-5 pt-5" style={{ background: PAPER }}>
-        <span className="text-[24px] font-bold uppercase leading-none text-black">Goal Involvement</span>
+        <span className="text-[24px] font-bold uppercase leading-none text-[var(--black)]">Goal Involvement</span>
         <div className="flex items-center gap-2 px-2 py-1.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
           <span className="text-[10px] font-medium uppercase tracking-[0.04em] text-black/40">Record</span>
-          <span className="text-[12px] font-medium leading-none text-black">
+          <span className="text-[12px] font-medium leading-none text-[var(--black)]">
             {record.flag} {record.player}
           </span>
           {record.year ? <span className="text-[12px] italic font-medium text-black/40">{record.year}</span> : null}
-          <span className="ml-auto text-[15px] font-bold leading-none tabular-nums text-black">{record.value}</span>
+          <span className="ml-auto text-[15px] font-bold leading-none tabular-nums text-[var(--black)]">{record.value}</span>
         </div>
       </div>
 
@@ -417,9 +409,30 @@ function FullInvolvementRow({ row, onClick }: { row: InvolvementRow; onClick: ()
 
 function RecordsView({ stats }: { stats: PlayerStat[] }) {
   const tables = useMemo<AllTimeRecordTable[]>(() => [
-    liveRankedTable('goals', 'Goals', ALL_TIME_GOALS, row => row.goals ?? 0, row => liveDeltaFor(row, stats, 'goals')),
-    liveRankedTable('assists', 'Assists', ALL_TIME_ASSISTS, row => row.assists ?? 0, row => liveDeltaFor(row, stats, 'assists')),
-    liveRankedTable('appearances', 'Appearances', ALL_TIME_APPEARANCES, row => row.games ?? 0, row => currentAppearancesFor(row)),
+    liveRankedTable(
+      'goals',
+      'Goals',
+      ALL_TIME_GOALS,
+      row => row.goals ?? 0,
+      row => liveDeltaFor(row, stats, 'goals'),
+      currentMetricRows(stats, 'goals'),
+    ),
+    liveRankedTable(
+      'assists',
+      'Assists',
+      ALL_TIME_ASSISTS,
+      row => row.assists ?? 0,
+      row => liveDeltaFor(row, stats, 'assists'),
+      currentMetricRows(stats, 'assists'),
+    ),
+    liveRankedTable(
+      'appearances',
+      'Appearances',
+      ALL_TIME_APPEARANCES,
+      row => row.games ?? 0,
+      row => currentAppearancesFor(row),
+      currentAppearanceRows(),
+    ),
     ...liveAgeAndSpeedTables(),
   ], [stats]);
 
@@ -436,7 +449,7 @@ function RecordTable({ table }: { table: AllTimeRecordTable }) {
   return (
     <section>
       <div className="flex flex-col gap-4 px-4 pb-5 pt-5" style={{ background: PAPER }}>
-        <span className="text-[24px] font-bold uppercase leading-none text-black">{table.title}</span>
+        <span className="text-[24px] font-bold uppercase leading-none text-[var(--black)]">{table.title}</span>
       </div>
 
       {table.rows.map(row => (
@@ -448,6 +461,7 @@ function RecordTable({ table }: { table: AllTimeRecordTable }) {
 
 function AllTimeRecordRowView({ row }: { row: AllTimeRecordRow }) {
   const team = row.isCurrent ? teamForCountry(row.country) : undefined;
+  const flag = team?.flagEmoji ?? flagForCountry(row.country);
   const isNewRecord = Boolean(row.isNewRecord);
   const bg = team?.primaryHex ?? '#1C1917';
   const fg = team ? rowTextColor(team) : '#FFFFFF';
@@ -465,7 +479,7 @@ function AllTimeRecordRowView({ row }: { row: AllTimeRecordRow }) {
       }}
     >
       <span className="min-w-0 flex-1 truncate text-[15px] font-medium leading-none">
-        {flagForCountry(row.country)} {shortPlayerName(row.player)}
+        {flag} {shortPlayerName(row.player)}
       </span>
       {row.detail ? (
         <span
@@ -506,9 +520,10 @@ function liveRankedTable(
   rows: WCRankedRecord[],
   baseValueFor: (row: WCRankedRecord) => number,
   currentDeltaFor: (row: WCRankedRecord) => number,
+  currentRows: LiveRecordRow[] = [],
 ): AllTimeRecordTable {
   const baseLeader = Math.max(...rows.map(baseValueFor), 0);
-  const liveRows = rows
+  const seededRows = rows
     .map(row => {
       const baseValue = baseValueFor(row);
       const currentDelta = currentDeltaFor(row);
@@ -525,9 +540,20 @@ function liveRankedTable(
         sortValue: value,
       };
     })
+  const mergedByPlayer = new Map<string, LiveRecordRow>();
+  for (const row of [...seededRows, ...currentRows]) {
+    const key = `${normalizeName(row.country)}:${normalizeName(row.player)}`;
+    const existing = mergedByPlayer.get(key);
+    if (!existing || row.sortValue > existing.sortValue) mergedByPlayer.set(key, row);
+  }
+  const liveRows = [...mergedByPlayer.values()]
     .sort((a, b) => b.sortValue - a.sortValue || a.player.localeCompare(b.player))
     .slice(0, 10)
-    .map(({ sortValue: _sortValue, ...row }) => row);
+    .map(({ sortValue, ...row }, index) => ({
+      ...row,
+      rank: index + 1,
+      isNewRecord: row.isNewRecord || (row.isCurrent && sortValue >= baseLeader),
+    }));
 
   return {
     id,
@@ -554,6 +580,47 @@ function liveAgeAndSpeedTables(): AllTimeRecordTable[] {
 
     return { ...table, rows: merged };
   });
+}
+
+function currentMetricRows(stats: PlayerStat[], metric: LeaderboardMetric): LiveRecordRow[] {
+  return stats
+    .filter(stat => stat[metric] > 0)
+    .map(stat => ({
+      rank: 0,
+      player: stat.playerName,
+      country: teamCountryName(stat.teamId),
+      value: String(stat[metric]),
+      detail: '2026',
+      currentDelta: String(stat[metric]),
+      isCurrent: true,
+      isNewRecord: false,
+      sortValue: stat[metric],
+    }));
+}
+
+function currentAppearanceRows(): LiveRecordRow[] {
+  const rows = new Map<string, LiveRecordRow>();
+  for (const fixture of playedFixtures()) {
+    for (const teamId of [fixture.homeTeamId, fixture.awayTeamId]) {
+      const lineup = dataService.matchLineup(fixture.id, teamId);
+      for (const slot of lineup?.players ?? []) {
+        const existing = rows.get(slot.playerId);
+        const value = (existing?.sortValue ?? 0) + 1;
+        rows.set(slot.playerId, {
+          rank: 0,
+          player: slot.playerName,
+          country: teamCountryName(teamId),
+          value: String(value),
+          detail: '2026',
+          currentDelta: String(value),
+          isCurrent: true,
+          isNewRecord: false,
+          sortValue: value,
+        });
+      }
+    }
+  }
+  return [...rows.values()];
 }
 
 function liveDeltaFor(row: WCRankedRecord, stats: PlayerStat[], metric: LeaderboardMetric): number {
@@ -816,11 +883,18 @@ function teamForCountry(country: string): Team | undefined {
   };
 
   const id = aliases[country];
-  return id ? dataService.team(id) : undefined;
+  if (id) return dataService.team(id);
+  const normalizedCountry = normalizeName(country);
+  return dataService.allTeams().find(team =>
+    normalizeName(team.name) === normalizedCountry ||
+    normalizeName(team.shortCode) === normalizedCountry ||
+    normalizeName(team.id) === normalizedCountry
+  );
 }
 
 function flagForCountry(country: string): string {
   const flags: Record<string, string> = {
+    Algeria: '🇩🇿',
     Argentina: '🇦🇷',
     Brazil: '🇧🇷',
     Cameroon: '🇨🇲',
@@ -833,19 +907,24 @@ function flagForCountry(country: string): string {
     Hungary: '🇭🇺',
     Italy: '🇮🇹',
     Mexico: '🇲🇽',
+    Netherlands: '🇳🇱',
     Nigeria: '🇳🇬',
     'Northern Ireland': '🇬🇧',
+    Peru: '🇵🇪',
     Poland: '🇵🇱',
     Portugal: '🇵🇹',
     Romania: '🇷🇴',
     Russia: '🇷🇺',
+    Spain: '🇪🇸',
     Sweden: '🇸🇪',
     Turkey: '🇹🇷',
+    Türkiye: '🇹🇷',
+    USSR: '🇷🇺',
     'United States': '🇺🇸',
     'West Germany': '🇩🇪',
   };
 
-  return flags[country] ?? '🏳';
+  return flags[country] ?? teamForCountry(country)?.flagEmoji ?? '🏳';
 }
 
 function shortPlayerName(player: string): string {

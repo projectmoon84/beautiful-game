@@ -6,7 +6,7 @@ export default function AppShell() {
     <div
       className="flex min-h-dvh flex-col overflow-x-hidden"
       style={{
-        background: '#000',
+        background: 'var(--black)',
         color: 'var(--black)',
         paddingTop: 'env(safe-area-inset-top)',
       }}

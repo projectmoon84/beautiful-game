@@ -688,6 +688,7 @@ export const dataService = {
       ...eventCache.filter(event => event.fixtureId !== fixtureId),
       ...refreshedEvents,
     ];
+    playerStatCache = [];
 
     const playerIds = [
       ...new Set(refreshedEvents.flatMap(event => [

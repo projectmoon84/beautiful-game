@@ -54,7 +54,7 @@ export interface AllTimeRecordTable {
 
 export const SINGLE_TOURNAMENT_RECORDS = {
   goals: { player: 'Just Fontaine', flag: '🇫🇷', year: 1958, value: 13 } satisfies WCRecord,
-  assists: { player: 'Pelé', flag: '🇧🇷', year: 1970, value: 6 } satisfies WCRecord,
+  assists: { player: 'Raymond Kopa', flag: '🇫🇷', year: 1958, value: 9 } satisfies WCRecord,
   cleanSheets: { player: 'Fabien Barthez', flag: '🇫🇷', year: 1998, value: 5 } satisfies WCRecord,
   involvement: [
     { player: 'Just Fontaine', flag: '🇫🇷', year: 1958, value: 13, note: 'pre-assist records' },
@@ -134,29 +134,34 @@ export const ALL_TIME_GOALS: WCRankedRecord[] = [
   { rank: 3, player: 'Gerd Muller', country: 'West Germany', editions: '1970-1974', worldCups: 2, goals: 14, games: 13 },
   { rank: 4, player: 'Just Fontaine', country: 'France', editions: '1958', worldCups: 1, goals: 13, games: 6 },
   { rank: 5, player: 'Lionel Messi', country: 'Argentina', editions: '2006-2022', worldCups: 5, goals: 13, games: 26 },
+  { rank: 6, player: 'Kylian Mbappe', country: 'France', editions: '2018-2022', worldCups: 2, goals: 12, games: 14 },
   { rank: 6, player: 'Pelé', country: 'Brazil', editions: '1958-1970', worldCups: 4, goals: 12, games: 14 },
-  { rank: 7, player: 'Sandor Kocsis', country: 'Hungary', editions: '1954', worldCups: 1, goals: 11, games: 5 },
-  { rank: 7, player: 'Jurgen Klinsmann', country: 'Germany', editions: '1990-1998', worldCups: 3, goals: 11, games: 17 },
-  { rank: 9, player: 'Kylian Mbappe', country: 'France', editions: '2018-2022', worldCups: 2, goals: 12, games: 14 },
+  { rank: 8, player: 'Sandor Kocsis', country: 'Hungary', editions: '1954', worldCups: 1, goals: 11, games: 5 },
+  { rank: 8, player: 'Jurgen Klinsmann', country: 'Germany', editions: '1990-1998', worldCups: 3, goals: 11, games: 17 },
   { rank: 10, player: 'Helmut Rahn', country: 'West Germany', editions: '1954-1958', worldCups: 2, goals: 10, games: 10 },
+  { rank: 10, player: 'Gabriel Batistuta', country: 'Argentina', editions: '1994-2002', worldCups: 3, goals: 10, games: 12 },
+  { rank: 10, player: 'Gary Lineker', country: 'England', editions: '1986-1990', worldCups: 2, goals: 10, games: 12 },
   { rank: 10, player: 'Teofilo Cubillas', country: 'Peru', editions: '1970-1978', worldCups: 3, goals: 10, games: 13 },
+  { rank: 10, player: 'Thomas Muller', country: 'Germany', editions: '2010-2022', worldCups: 4, goals: 10, games: 19 },
   { rank: 10, player: 'Grzegorz Lato', country: 'Poland', editions: '1974-1982', worldCups: 3, goals: 10, games: 20 },
   { rank: 13, player: 'Cristiano Ronaldo', country: 'Portugal', editions: '2006-2022', worldCups: 5, goals: 8, games: 22 },
 ];
 
 export const ALL_TIME_ASSISTS: WCRankedRecord[] = [
-  { rank: 1, player: 'Lionel Messi', country: 'Argentina', assists: 8 },
-  { rank: 1, player: 'Diego Maradona', country: 'Argentina', assists: 8 },
-  { rank: 3, player: 'Pierre Littbarski', country: 'Germany', assists: 7 },
-  { rank: 3, player: 'Grzegorz Lato', country: 'Poland', assists: 7 },
-  { rank: 5, player: 'David Beckham', country: 'England', assists: 6 },
-  { rank: 5, player: 'Pelé', country: 'Brazil', assists: 6 },
-  { rank: 5, player: 'Thomas Hassler', country: 'Germany', assists: 6 },
-  { rank: 5, player: 'Bastian Schweinsteiger', country: 'Germany', assists: 6 },
-  { rank: 5, player: 'Thomas Muller', country: 'Germany', assists: 6 },
-  { rank: 5, player: 'Uwe Seeler', country: 'Germany', assists: 6 },
-  { rank: 5, player: 'Francesco Totti', country: 'Italy', assists: 6 },
-  { rank: 12, player: 'Cristiano Ronaldo', country: 'Portugal', assists: 2 },
+  // Historical assist totals vary by provider, especially pre-1966. This uses
+  // the broad World Cup record convention: Pelé 10, Messi/Maradona 8.
+  { rank: 1, player: 'Pelé', country: 'Brazil', editions: '1958-1970', assists: 10 },
+  { rank: 2, player: 'Lionel Messi', country: 'Argentina', editions: '2006-2022', assists: 8 },
+  { rank: 2, player: 'Diego Maradona', country: 'Argentina', editions: '1982-1994', assists: 8 },
+  { rank: 4, player: 'Pierre Littbarski', country: 'West Germany', editions: '1982-1990', assists: 7 },
+  { rank: 4, player: 'Grzegorz Lato', country: 'Poland', editions: '1974-1982', assists: 7 },
+  { rank: 6, player: 'David Beckham', country: 'England', editions: '1998-2006', assists: 6 },
+  { rank: 6, player: 'Thomas Hassler', country: 'Germany', editions: '1990-1998', assists: 6 },
+  { rank: 6, player: 'Bastian Schweinsteiger', country: 'Germany', editions: '2006-2014', assists: 6 },
+  { rank: 6, player: 'Thomas Muller', country: 'Germany', editions: '2010-2022', assists: 6 },
+  { rank: 6, player: 'Uwe Seeler', country: 'West Germany', editions: '1958-1970', assists: 6 },
+  { rank: 6, player: 'Francesco Totti', country: 'Italy', editions: '2002-2006', assists: 6 },
+  { rank: 12, player: 'Cristiano Ronaldo', country: 'Portugal', editions: '2006-2022', assists: 2 },
 ];
 
 export const ALL_TIME_APPEARANCES: WCRankedRecord[] = [

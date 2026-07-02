@@ -26,10 +26,15 @@ const MS_PER_MINUTE = 150;
 const EVENT_BREATH_MS = 1100;        // breathing room between consecutive events
 const GOAL_BREATH_MS = 1600;         // extra theatre after a goal
 const SAME_MINUTE_EXTRA_MS = 300;    // bonus gap after a same-minute cluster
-const TIMELINE_EASE = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'; // smooth ease-out for push-downs
-const ENTRY_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';           // gentle spring for new event entry
-const ENTRY_DELAY_MS = 280;   // let space clear before the new event slides in
+const TIMELINE_EASE = 'cubic-bezier(0.65, 0, 0.35, 1)'; // smooth ease-in-out for push-downs
+const ENTRY_EASE = 'cubic-bezier(0.45, 0, 0.2, 1)';     // gentle opacity ramp for entering rows
+const ENTRY_DELAY_MS = 640;   // let space clear before the new event fades in
 const ENTRY_DURATION_MS = 680;
+const EVENT_ABSORB_MS = 700;
+const ROW_SHIFT_DURATION_MS = 560;
+const CLUSTER_STAGGER_MS = 150;
+const SHOOTOUT_ENTRY_DELAY_MS = 1000;
+const SHOOTOUT_ROUND_BREATH_MS = 1200;
 
 type RevealPhase = 'enter' | 'rings' | 'colours' | 'score' | 'events' | 'done';
 type TimelineMarkerKind = 'HT' | 'FT' | 'AET' | 'PEN_START';
@@ -348,7 +353,9 @@ function MatchPageContent({
   const [revealedCount, setRevealedCount] = useState(0);
   const [replayMinute, setReplayMinute] = useState(0);
   const [replayLabel, setReplayLabel] = useState<string | undefined>();
-  const [confettiItems, setConfettiItems] = useState<Array<{ key: string; colors: string[] }>>([]);
+  const [pendingEntryIds, setPendingEntryIds] = useState<Set<string>>(() => new Set());
+  const [animatingEntryIds, setAnimatingEntryIds] = useState<Set<string>>(() => new Set());
+  const [confettiItems, setConfettiItems] = useState<Array<{ key: string; colors: string[]; delay?: number }>>([]);
   const revealTimerIdsRef = useRef<number[]>([]);
 
   // Timeline items include real match events plus phase markers such as HT, FT,
@@ -358,6 +365,8 @@ function MatchPageContent({
     () => buildTimelineItems(allEvents, fixture),
     [allEvents, fixture],
   );
+  const replayItemsRef = useRef<TimelineItem[] | null>(null);
+  const replayItems = replayItemsRef.current ?? playableItems;
   const isDone = phase === 'done';
 
   const controlBarStatus = useMemo<MatchControlBarStatus>(() => {
@@ -369,11 +378,12 @@ function MatchPageContent({
         time: formatTime(fixture.kickoffUtc),
       };
     }
-    if (phase === 'events') return { kind: 'replaying', minute: replayMinute, label: replayLabel };
+    if (phase !== 'done' && hasTimeline) return { kind: 'replaying', minute: replayMinute, label: replayLabel };
     return { kind: 'finished', label: finishedTimerLabel(fixture) };
   }, [
     isLive,
     isUpcoming,
+    hasTimeline,
     phase,
     replayMinute,
     replayLabel,
@@ -392,9 +402,11 @@ function MatchPageContent({
   const skipReveal = useCallback(() => {
     if (!hasTimeline || isDone) return;
     clearRevealTimers();
-    setRevealedCount(playableItems.length);
+    setRevealedCount(replayItems.length);
+    setPendingEntryIds(new Set());
+    setAnimatingEntryIds(new Set());
     setPhase('done');
-  }, [clearRevealTimers, hasTimeline, isDone, playableItems.length]);
+  }, [clearRevealTimers, hasTimeline, isDone, replayItems.length]);
 
   const handleReplayTap = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -418,13 +430,15 @@ function MatchPageContent({
     if (revealedCount === 0) return;
     const el = bottomRef.current;
     if (!el) return;
-    const newEvent = playableItems[revealedCount - 1];
+    const newEvent = replayItems[revealedCount - 1];
     const rowH = newEvent?.kind === 'event' && newEvent.event.assistPlayerId ? 58 : 46;
     flipBottom(el, rowH);
-  }, [playableItems, revealedCount]);
+  }, [replayItems, revealedCount]);
 
   useEffect(() => {
     const timers: number[] = [];
+    const scheduledItems = playableItems;
+    replayItemsRef.current = scheduledItems;
     const schedule = (fn: () => void, delay: number) => {
       const timerId = window.setTimeout(fn, delay);
       timers.push(timerId);
@@ -436,7 +450,7 @@ function MatchPageContent({
     schedule(() => setPhase('colours'), 480);
     schedule(() => setPhase('score'),   820);
 
-    if (!hasTimeline || playableItems.length === 0) {
+    if (!hasTimeline || scheduledItems.length === 0) {
       schedule(() => setPhase('done'), 1100);
       return () => {
         timers.forEach(timerId => window.clearTimeout(timerId));
@@ -448,55 +462,113 @@ function MatchPageContent({
 
     const GOAL_TYPES = new Set<string>(['goal', 'own_goal', 'var_goal', 'penalty']);
 
-    let bonusMs = 0;
-    let lastFireTime = 1200;
+    let cursorMs = 1200;
     let prevMinute = 0;     // tracks the last minute the clock showed
     let lastBreath = EVENT_BREATH_MS;
 
-    playableItems.forEach((item, i) => {
-      const replayMinute = item.replayMinute;
-      const fireAt = 1200 + replayMinute * MS_PER_MINUTE + bonusMs;
-      lastFireTime = fireAt;
+    for (let i = 0; i < scheduledItems.length;) {
+      const clusterStart = i;
+      const firstItem = scheduledItems[i];
+      const replayMinute = firstItem.replayMinute;
+      let clusterEnd = i + 1;
 
-      // Tick minutes between prevMinute and this event (clock ticks naturally up to the event).
+      // Same-minute match events reveal as one cluster: the timeline creates
+      // enough space once, then the new rows fade in with a small stagger.
+      // Shootout rounds stay one-at-a-time so the shootout keeps its suspense.
+      while (
+        clusterEnd < scheduledItems.length &&
+        scheduledItems[clusterEnd].replayMinute === replayMinute &&
+        firstItem.kind !== 'shootout_round' &&
+        scheduledItems[clusterEnd].kind !== 'shootout_round'
+      ) {
+        clusterEnd++;
+      }
+
+      const clusterItems = scheduledItems.slice(clusterStart, clusterEnd);
+      // Advance the clock only after the previous event has fully revealed
+      // and had time to be read. This keeps the timer coupled to the visible
+      // timeline instead of racing toward the next minute.
       for (let m = prevMinute + 1; m < replayMinute; m++) {
-        const tickAt = fireAt - (replayMinute - m) * MS_PER_MINUTE;
+        cursorMs += MS_PER_MINUTE;
+        const tickAt = cursorMs;
         schedule(() => {
           setReplayMinute(m);
           setReplayLabel(m > 120 ? 'PEN' : m > 90 ? 'ET' : undefined);
         }, tickAt);
       }
 
-      // At the event's own minute: clock reaches the event's minute AND the event reveals.
+      cursorMs += MS_PER_MINUTE;
+      const fireAt = cursorMs;
+      const revealDelay = firstItem.kind === 'shootout_round' ? SHOOTOUT_ENTRY_DELAY_MS : ENTRY_DELAY_MS;
+      const revealAt = fireAt + revealDelay;
+
+      // First reserve the row space. The inner row reveal happens after the
+      // entry delay; keep the timer behind until the visible event appears.
+      schedule(() => {
+        setPendingEntryIds(prev => {
+          const next = new Set(prev);
+          clusterItems.forEach(item => next.add(item.id));
+          return next;
+        });
+        setRevealedCount(clusterEnd);
+      }, fireAt);
+
+      for (let clusterIndex = 0; clusterIndex < clusterItems.length; clusterIndex++) {
+        const item = clusterItems[clusterIndex];
+        schedule(() => {
+          setPendingEntryIds(prev => {
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+          setAnimatingEntryIds(prev => {
+            const next = new Set(prev);
+            next.add(item.id);
+            return next;
+          });
+          schedule(() => {
+            setAnimatingEntryIds(prev => {
+              const next = new Set(prev);
+              next.delete(item.id);
+              return next;
+            });
+          }, ENTRY_DURATION_MS + 80);
+          if (item.kind === 'event' && GOAL_TYPES.has(item.event.type)) {
+            const team = item.event.teamId === home.id ? home : away;
+            setConfettiItems(prev => [
+              ...prev,
+              { key: `${item.event.id}-${clusterStart + clusterIndex}`, colors: [team.primaryHex, team.secondaryHex, '#ffffff'] },
+            ]);
+          }
+        }, revealAt + clusterIndex * CLUSTER_STAGGER_MS);
+      }
+
+      // At the visible reveal moment: clock reaches the event's minute and
+      // the timer pill label updates in sync with the row fading in.
       schedule(() => {
         setReplayMinute(replayMinute);
-        setReplayLabel(timerLabelForItem(item));
-        setRevealedCount(i + 1);
-        if (item.kind === 'event' && GOAL_TYPES.has(item.event.type)) {
-          const team = item.event.teamId === home.id ? home : away;
-          setConfettiItems(prev => [
-            ...prev,
-            { key: `${item.event.id}-${i}`, colors: [team.primaryHex, team.secondaryHex, '#ffffff'] },
-          ]);
-        }
-      }, fireAt);
+        setReplayLabel(timerLabelForItem(clusterItems[clusterItems.length - 1]));
+      }, revealAt);
 
       prevMinute = replayMinute;
 
-      // Same-minute events get a bonus gap so the cluster feels intentionally staggered.
-      const isSameMinuteAsPrev = i > 0 && playableItems[i - 1].replayMinute === item.replayMinute;
-      lastBreath = EVENT_BREATH_MS
-        + (item.kind === 'event' && GOAL_TYPES.has(item.event.type) ? GOAL_BREATH_MS : 0)
-        + (isSameMinuteAsPrev ? SAME_MINUTE_EXTRA_MS : 0);
-      bonusMs += lastBreath;
-    });
+      const clusterHasGoal = clusterItems.some(item => item.kind === 'event' && GOAL_TYPES.has(item.event.type));
+      const isShootoutRound = firstItem.kind === 'shootout_round';
+      lastBreath = isShootoutRound
+        ? SHOOTOUT_ENTRY_DELAY_MS + ENTRY_DURATION_MS + SHOOTOUT_ROUND_BREATH_MS
+        : ENTRY_DELAY_MS + ENTRY_DURATION_MS + EVENT_ABSORB_MS + (EVENT_BREATH_MS * Math.max(0, clusterItems.length - 1))
+          + (clusterHasGoal ? GOAL_BREATH_MS : 0)
+          + (clusterItems.length > 1 ? SAME_MINUTE_EXTRA_MS + (clusterItems.length - 1) * CLUSTER_STAGGER_MS : 0);
+      cursorMs = fireAt + lastBreath;
+      i = clusterEnd;
+    }
 
     // After the last event's breathing pause, tick the clock to 90 (or to the ET
     // minute if the last event was in extra time).
     const maxMinute = Math.max(90, prevMinute);
-    let lastScheduledTime = lastFireTime;
+    let lastScheduledTime = cursorMs;
     for (let m = prevMinute + 1; m <= maxMinute; m++) {
-      const tickAt = lastFireTime + lastBreath + (m - prevMinute) * MS_PER_MINUTE;
+      const tickAt = cursorMs + (m - prevMinute) * MS_PER_MINUTE;
       lastScheduledTime = tickAt;
       schedule(() => {
         setReplayMinute(m);
@@ -505,7 +577,11 @@ function MatchPageContent({
     }
 
     // Settle once the clock finishes.
-    schedule(() => setPhase('done'), lastScheduledTime + 800);
+    schedule(() => {
+      setPendingEntryIds(new Set());
+      setAnimatingEntryIds(new Set());
+      setPhase('done');
+    }, lastScheduledTime + 800);
     return () => {
       timers.forEach(timerId => window.clearTimeout(timerId));
       revealTimerIdsRef.current = revealTimerIdsRef.current.filter(timerId => !timers.includes(timerId));
@@ -523,16 +599,18 @@ function MatchPageContent({
   const displayHomeScore = isScored
     ? isDone || !hasTimeline
       ? (fixture.homeScore ?? 0)
-      : playableItems
+      : replayItems
           .slice(0, revealedCount)
+          .filter(item => !pendingEntryIds.has(item.id))
           .filter(item => item.kind === 'event' && isScoringEvent(item.event) && item.event.teamId === home.id)
           .length
     : null;
   const displayAwayScore = isScored
     ? isDone || !hasTimeline
       ? (fixture.awayScore ?? 0)
-      : playableItems
+      : replayItems
           .slice(0, revealedCount)
+          .filter(item => !pendingEntryIds.has(item.id))
           .filter(item => item.kind === 'event' && isScoringEvent(item.event) && item.event.teamId === away.id)
           .length
     : null;
@@ -540,7 +618,7 @@ function MatchPageContent({
   // The timeline shows the events revealed so far; once done, use the live array.
   const shownItems: TimelineItem[] = isDone
     ? playableItems
-    : playableItems.slice(0, revealedCount);
+    : replayItems.slice(0, revealedCount);
 
   return (
     <div
@@ -652,6 +730,8 @@ function MatchPageContent({
           {shownItems.length > 0 && (
             <EventTimeline
               items={shownItems}
+              pendingEntryIds={pendingEntryIds}
+              animatingEntryIds={animatingEntryIds}
               homeTeamId={home.id}
               homeColor={home.secondaryHex}
               awayColor={awayInk}
@@ -721,7 +801,7 @@ function MatchPageContent({
 
       {/* Confetti — fixed so particles fly across the full viewport */}
       {confettiItems.map(item => (
-        <ConfettiBurst key={item.key} colors={item.colors} />
+        <ConfettiBurst key={item.key} colors={item.colors} delay={item.delay ?? 0} />
       ))}
     </div>
   );
@@ -861,7 +941,7 @@ interface ConfettoPiece {
   delay: number; w: number; h: number;
 }
 
-function ConfettiBurst({ colors }: { colors: string[] }) {
+function ConfettiBurst({ colors, delay = 0 }: { colors: string[]; delay?: number }) {
   const pieces = useMemo<ConfettoPiece[]>(() => {
     return Array.from({ length: 54 }, (_, i) => {
       // Bias particles upward — top hemisphere for the first two-thirds
@@ -902,7 +982,7 @@ function ConfettiBurst({ colors }: { colors: string[] }) {
             '--dx': `${p.dx}px`,
             '--dy': `${p.dy}px`,
             '--rot': `${p.rot}deg`,
-            animation: `confetti-fly 1.4s ${p.delay}s cubic-bezier(0.22,1,0.36,1) both`,
+            animation: `confetti-fly 1.4s ${delay + p.delay}s cubic-bezier(0.22,1,0.36,1) both`,
           }}
         />
       ))}
@@ -916,9 +996,11 @@ function ConfettiBurst({ colors }: { colors: string[] }) {
 // events are pushed down — matching "shifting down as they come in".
 
 function EventTimeline({
-  items, homeTeamId, homeColor, awayColor,
+  items, pendingEntryIds, animatingEntryIds, homeTeamId, homeColor, awayColor,
 }: {
   items: TimelineItem[];
+  pendingEntryIds: Set<string>;
+  animatingEntryIds: Set<string>;
   homeTeamId: string;
   homeColor: string;
   awayColor: string;
@@ -933,14 +1015,13 @@ function EventTimeline({
     }),
     [items, indexMap],
   );
-
   // FLIP: track DOM positions of existing rows so we can slide them to their
   // new positions whenever a new event or subs are inserted above them.
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const prevPositions = useRef(new Map<string, number>());
+  const cleanupTimersRef = useRef(new Map<string, number>());
   const prevLengthRef = useRef(items.length);
-  const previousIdsRef = useRef(new Set(items.map(item => item.id)));
-  const previousIds = previousIdsRef.current;
+  const previousIdsRef = useRef(new Set<string>());
 
   // Runs first after each render where the count increased — animates existing rows.
   useLayoutEffect(() => {
@@ -955,15 +1036,19 @@ function EventTimeline({
       if (prevY === undefined || !el) return;
       const delta = prevY - el.getBoundingClientRect().top;
       if (Math.abs(delta) < 1) return;
+      const cleanupTimer = cleanupTimersRef.current.get(id);
+      if (cleanupTimer !== undefined) window.clearTimeout(cleanupTimer);
       el.style.transition = 'none';
       el.style.transform = `translateY(${delta}px)`;
       el.style.willChange = 'transform';
       el.getBoundingClientRect();
-      el.style.transition = `transform 480ms ${TIMELINE_EASE}`;
+      el.style.transition = `transform ${ROW_SHIFT_DURATION_MS}ms ${TIMELINE_EASE}`;
       el.style.transform = '';
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
         el.style.willChange = '';
-      }, 500);
+        cleanupTimersRef.current.delete(id);
+      }, ROW_SHIFT_DURATION_MS + 40);
+      cleanupTimersRef.current.set(id, timer);
     });
   }, [items.length]);
 
@@ -981,7 +1066,8 @@ function EventTimeline({
         <TimelineMarker
           key={item.id}
           item={item}
-          isNew={!previousIds.has(item.id)}
+          isNew={animatingEntryIds.has(item.id)}
+          isPending={pendingEntryIds.has(item.id)}
           rowRef={el => {
             if (el) rowRefs.current.set(item.id, el);
             else rowRefs.current.delete(item.id);
@@ -993,7 +1079,8 @@ function EventTimeline({
           item={item}
           homeColor={homeColor}
           awayColor={awayColor}
-          isNew={!previousIds.has(item.id)}
+          isNew={animatingEntryIds.has(item.id)}
+          isPending={pendingEntryIds.has(item.id)}
           rowRef={el => {
             if (el) rowRefs.current.set(item.id, el);
             else rowRefs.current.delete(item.id);
@@ -1005,7 +1092,8 @@ function EventTimeline({
           event={item.event}
           isHome={item.event.teamId === homeTeamId}
           color={item.event.teamId === homeTeamId ? homeColor : awayColor}
-          isNew={!previousIds.has(item.id)}
+          isNew={animatingEntryIds.has(item.id)}
+          isPending={pendingEntryIds.has(item.id)}
           rowRef={el => {
             if (el) rowRefs.current.set(item.id, el);
             else rowRefs.current.delete(item.id);
@@ -1017,12 +1105,13 @@ function EventTimeline({
 }
 
 function TimelineEvent({
-  event, isHome, color, isNew, rowRef,
+  event, isHome, color, isNew, isPending, rowRef,
 }: {
   event: MatchEvent;
   isHome: boolean;
   color: string;
   isNew: boolean;
+  isPending: boolean;
   rowRef?: (el: HTMLDivElement | null) => void;
 }) {
   const player = dataService.player(event.playerId);
@@ -1056,34 +1145,39 @@ function TimelineEvent({
   return (
     <div
       ref={rowRef}
-      className="flex w-full items-start py-1"
-      style={{
-        animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_DELAY_MS}ms ${ENTRY_EASE} both` : undefined,
-      }}
+      className="w-full py-1"
     >
-      {/* Left half — home events */}
-      <div className="flex min-w-0 flex-1 items-start justify-end gap-4 pr-7">
-        {isHome && (
-          <>
-            {nameBlock('right')}
-            {iconEl}
-          </>
-        )}
-      </div>
+      <div
+        className="flex w-full items-start"
+        style={{
+          opacity: isPending ? 0 : undefined,
+          animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_EASE} both` : undefined,
+        }}
+      >
+        {/* Left half — home events */}
+        <div className="flex min-w-0 flex-1 items-start justify-end gap-4 pr-7">
+          {isHome && (
+            <>
+              {nameBlock('right')}
+              {iconEl}
+            </>
+          )}
+        </div>
 
-      {/* Centre — minute pill */}
-      <div className="flex w-10 shrink-0 justify-center pt-[2px]">
-        <MinutePill minute={minuteLabel.minute} phase={minuteLabel.phase} />
-      </div>
+        {/* Centre — minute pill */}
+        <div className="flex w-10 shrink-0 justify-center pt-[2px]">
+          <MinutePill minute={minuteLabel.minute} phase={minuteLabel.phase} />
+        </div>
 
-      {/* Right half — away events */}
-      <div className="flex min-w-0 flex-1 items-start gap-4 pl-7">
-        {!isHome && (
-          <>
-            {iconEl}
-            {nameBlock('left')}
-          </>
-        )}
+        {/* Right half — away events */}
+        <div className="flex min-w-0 flex-1 items-start gap-4 pl-7">
+          {!isHome && (
+            <>
+              {iconEl}
+              {nameBlock('left')}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1092,35 +1186,42 @@ function TimelineEvent({
 function TimelineMarker({
   item,
   isNew,
+  isPending,
   rowRef,
 }: {
   item: Extract<TimelineItem, { kind: 'marker' }>;
   isNew: boolean;
+  isPending: boolean;
   rowRef?: (el: HTMLDivElement | null) => void;
 }) {
   const isShootoutStart = item.marker === 'PEN_START';
   return (
     <div
       ref={rowRef}
-      className="flex w-full items-center py-1.5"
-      style={{
-        animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_DELAY_MS}ms ${ENTRY_EASE} both` : undefined,
-      }}
+      className="w-full py-1.5"
     >
-      <div className="flex flex-1 justify-end pr-7">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
-          {isShootoutStart ? 'Shootout' : ''}
-        </span>
-      </div>
-      <div className="flex w-10 shrink-0 justify-center">
-        <span className="flex min-h-4 min-w-[34px] items-center justify-center rounded-full bg-black/70 px-2 text-[9px] font-bold uppercase leading-none tracking-[0.08em] text-white outline outline-1 outline-white/25">
-          {item.marker === 'PEN_START' ? 'PEN' : item.label}
-        </span>
-      </div>
-      <div className="flex flex-1 pl-7">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
-          {isShootoutStart ? 'Begins' : ''}
-        </span>
+      <div
+        className="flex w-full items-center"
+        style={{
+          opacity: isPending ? 0 : undefined,
+          animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_EASE} both` : undefined,
+        }}
+      >
+        <div className="flex flex-1 justify-end pr-7">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
+            {isShootoutStart ? 'Shootout' : ''}
+          </span>
+        </div>
+        <div className="flex w-10 shrink-0 justify-center">
+          <span className="flex min-h-4 min-w-[34px] items-center justify-center rounded-full bg-black/70 px-2 text-[9px] font-bold uppercase leading-none tracking-[0.08em] text-white outline outline-1 outline-white/25">
+            {item.marker === 'PEN_START' ? 'PEN' : item.label}
+          </span>
+        </div>
+        <div className="flex flex-1 pl-7">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
+            {isShootoutStart ? 'Begins' : ''}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -1131,30 +1232,37 @@ function TimelineShootoutRound({
   homeColor,
   awayColor,
   isNew,
+  isPending,
   rowRef,
 }: {
   item: Extract<TimelineItem, { kind: 'shootout_round' }>;
   homeColor: string;
   awayColor: string;
   isNew: boolean;
+  isPending: boolean;
   rowRef?: (el: HTMLDivElement | null) => void;
 }) {
   return (
     <div
       ref={rowRef}
-      className="flex w-full items-center py-1.5"
-      style={{
-        animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_DELAY_MS}ms ${ENTRY_EASE} both` : undefined,
-      }}
+      className="w-full py-1.5"
     >
-      <div className="flex min-w-0 flex-1 items-center justify-end pr-6">
-        <ShootoutAttemptSide attempt={item.homeAttempt} align="right" color={homeColor} />
-      </div>
-      <div className="flex w-16 shrink-0 justify-center">
-        <ShootoutScorePill scoreline={item.scoreline} />
-      </div>
-      <div className="flex min-w-0 flex-1 items-center pl-6">
-        <ShootoutAttemptSide attempt={item.awayAttempt} align="left" color={awayColor} />
+      <div
+        className="flex w-full items-center"
+        style={{
+          opacity: isPending ? 0 : undefined,
+          animation: isNew ? `event-row-in ${ENTRY_DURATION_MS}ms ${ENTRY_EASE} both` : undefined,
+        }}
+      >
+        <div className="flex min-w-0 flex-1 items-center justify-end pr-6">
+          <ShootoutAttemptSide attempt={item.homeAttempt} align="right" color={homeColor} />
+        </div>
+        <div className="flex w-16 shrink-0 justify-center">
+          <ShootoutScorePill scoreline={item.scoreline} />
+        </div>
+        <div className="flex min-w-0 flex-1 items-center pl-6">
+          <ShootoutAttemptSide attempt={item.awayAttempt} align="left" color={awayColor} />
+        </div>
       </div>
     </div>
   );
