@@ -6,12 +6,18 @@ export default function AppShell() {
     <div
       className="flex min-h-dvh flex-col overflow-x-hidden"
       style={{
-        background: 'var(--surface)',
+        background: '#000',
         color: 'var(--black)',
         paddingTop: 'env(safe-area-inset-top)',
       }}
     >
-      <main className="flex-1" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}>
+      <main
+        className="flex-1"
+        style={{
+          background: 'var(--surface)',
+          paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))',
+        }}
+      >
         <Outlet />
       </main>
 

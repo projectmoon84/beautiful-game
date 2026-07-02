@@ -1174,14 +1174,14 @@ function ShootoutAttemptSide({
   const player = attempt.playerId ? dataService.player(attempt.playerId) : undefined;
   const label = player?.name ?? attempt.playerName ?? (attempt.outcome === 'scored' ? 'Scored' : 'Missed');
   const text = (
-    <div className="min-w-0" style={{ color, textAlign: align }}>
-      <div className="truncate text-[14px] font-semibold leading-[14px]">{label}</div>
+    <div className="flex h-4 min-w-0 items-center" style={{ color, textAlign: align }}>
+      <div className="truncate text-[14px] font-semibold leading-none">{label}</div>
     </div>
   );
   const icon = <ShootoutOutcomeIcon outcome={attempt.outcome} />;
 
   return (
-    <div className={['flex min-w-0 items-center gap-4', align === 'right' ? 'justify-end' : 'justify-start'].join(' ')}>
+    <div className={['flex min-h-6 min-w-0 items-center gap-4', align === 'right' ? 'justify-end' : 'justify-start'].join(' ')}>
       {align === 'right' ? (
         <>
           {text}
@@ -1275,8 +1275,8 @@ function SubIcon() {
 function ShootoutOutcomeIcon({ outcome }: { outcome: 'scored' | 'missed' }) {
   if (outcome === 'missed') {
     return (
-      <div className="relative flex h-6 w-6 shrink-0 items-start justify-center">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="-mt-0.5">
+      <div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <rect width="16" height="16" rx="8" fill="#FB2C36" />
           <path d="M10.5 5.5L5.5 10.5M5.5 5.5L10.5 10.5" stroke="#FEF2F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -1285,10 +1285,10 @@ function ShootoutOutcomeIcon({ outcome }: { outcome: 'scored' | 'missed' }) {
   }
 
   return (
-    <div className="relative flex h-6 w-6 shrink-0 items-start justify-center">
-      <svg width="20" height="23" viewBox="0 0 20 23" fill="none" className="-mt-0.5">
-        <circle cx="9.99988" cy="8.33325" r="6.25" fill="white" />
-        <path d="M14.1667 1.11658C15.4235 1.84229 16.4691 2.88368 17.1998 4.13766C17.9306 5.39164 18.3211 6.81472 18.3328 8.26603C18.3446 9.71733 17.9771 11.1465 17.2667 12.4122C16.5563 13.6778 15.5277 14.7359 14.2827 15.4818C13.0377 16.2278 11.6195 16.6356 10.1684 16.665C8.71735 16.6943 7.28378 16.3442 6.00962 15.6493C4.73546 14.9543 3.66488 13.9387 2.90388 12.7028C2.14288 11.467 1.71783 10.0538 1.67082 8.60324L1.66666 8.33324L1.67082 8.06324C1.71749 6.62407 2.13628 5.22155 2.88636 3.9924C3.63643 2.76326 4.6922 1.74945 5.95073 1.04981C7.20927 0.350171 8.62761 -0.0114257 10.0675 0.000275205C11.5074 0.0119761 12.9197 0.396575 14.1667 1.11658ZM13.0892 6.07741C12.9457 5.93393 12.7547 5.84774 12.5522 5.835C12.3497 5.82227 12.1495 5.88387 11.9892 6.00824L11.9108 6.07741L9.16666 8.82074L8.08916 7.74408L8.01082 7.67491C7.85048 7.55062 7.6503 7.4891 7.44783 7.50187C7.24536 7.51465 7.0545 7.60084 6.91104 7.7443C6.76759 7.88775 6.68139 8.07861 6.66862 8.28108C6.65584 8.48355 6.71737 8.68373 6.84166 8.84408L6.91082 8.92241L8.57749 10.5891L8.65582 10.6582C8.80197 10.7716 8.98168 10.8332 9.16666 10.8332C9.35163 10.8332 9.53135 10.7716 9.67749 10.6582L9.75582 10.5891L13.0892 7.25574L13.1583 7.17741C13.2827 7.01707 13.3443 6.81686 13.3316 6.61434C13.3188 6.41182 13.2326 6.22091 13.0892 6.07741Z" fill="#00D492" />
+    <div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect width="16" height="16" rx="8" fill="#00D492" />
+        <path d="M11 5.5L7 9.5L5 7.5" stroke="#ECFDF5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </div>
   );
@@ -1296,7 +1296,7 @@ function ShootoutOutcomeIcon({ outcome }: { outcome: 'scored' | 'missed' }) {
 
 function ShootoutScorePill({ scoreline }: { scoreline: string }) {
   return (
-    <span className="flex h-3 min-w-[34px] items-center justify-center rounded-full bg-white px-[6px] py-0.5 text-[10px] font-semibold leading-none text-black">
+    <span className="flex h-4 min-w-[34px] items-center justify-center rounded-full bg-white px-[6px] text-[10px] font-semibold leading-none text-black">
       {scoreline}
     </span>
   );
