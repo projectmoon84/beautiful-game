@@ -93,7 +93,9 @@ function plannedFixtureJobs(fixture: FixtureRow, ukDate: string): PlannedJob[] {
     { kind: 'pre_t15', minutes: -15, priority: 25 },
     { kind: 'pre_t02', minutes: -2, priority: 20 },
   ];
-  const liveJobCount = fixture.stage === 'group' ? 131 : 181;
+  // Knockout games can run deep into extra time and penalties. Keep polling for
+  // four hours from kickoff so late UK starts, such as 02:30, are covered to 06:30.
+  const liveJobCount = fixture.stage === 'group' ? 131 : 241;
   const liveOffsets = Array.from({ length: liveJobCount }, (_, minute) => ({
     kind: `live_m${String(minute).padStart(3, '0')}`,
     minutes: minute,
