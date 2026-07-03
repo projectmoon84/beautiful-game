@@ -243,6 +243,7 @@ export default function MatchPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [shareOpen, setShareOpen] = useState(false);
+  const [matchRefreshReadyFor, setMatchRefreshReadyFor] = useState<string | null>(null);
   const [, setLiveRefreshTick] = useState(0);
 
   const isLiveDemo = id === 'live-demo';
@@ -261,12 +262,21 @@ export default function MatchPage() {
   }, [fixture?.id, fixture?.homeScore, fixture?.awayScore, fixture?.status, isLiveDemo]);
 
   useEffect(() => {
-    if (!fixture || isLiveDemo) return;
-    if (fixture.status !== 'live' && fixture.status !== 'finished') return;
+    if (!fixture || isLiveDemo) {
+      setMatchRefreshReadyFor(fixture?.id ?? null);
+      return;
+    }
+    if (fixture.status !== 'live' && fixture.status !== 'finished') {
+      setMatchRefreshReadyFor(fixture.id);
+      return;
+    }
     let cancelled = false;
+    setMatchRefreshReadyFor(null);
     async function refresh() {
       const changed = await dataService.refreshMatch(fixture!.id);
-      if (!cancelled && changed) setLiveRefreshTick(t => t + 1);
+      if (cancelled) return;
+      if (changed) setLiveRefreshTick(t => t + 1);
+      setMatchRefreshReadyFor(fixture!.id);
     }
     refresh();
     if (fixture.status !== 'live') return () => { cancelled = true; };
@@ -292,10 +302,12 @@ export default function MatchPage() {
   const isLive = fixture.status === 'live';
   const isUpcoming = fixture.status === 'scheduled';
   const hasTimeline = isScored && (allEvents.length > 0 || fixture.status === 'finished');
+  const replayReady = isLiveDemo || fixture.status === 'scheduled' || matchRefreshReadyFor === fixture.id;
   const awayInk = away.secondaryHex;
 
   return (
     <MatchPageContent
+      key={fixture.id}
       fixture={fixture}
       home={home}
       away={away}
@@ -308,6 +320,7 @@ export default function MatchPage() {
       isLive={isLive}
       isUpcoming={isUpcoming}
       hasTimeline={hasTimeline}
+      replayReady={replayReady}
       homeFact={homeFact}
       awayFact={awayFact}
       onBack={() => navigate(-1)}
@@ -322,7 +335,7 @@ export default function MatchPage() {
 function MatchPageContent({
   fixture, home, away, awayInk, allEvents, rows, venue,
   isLiveDemo, isScored, isLive, isUpcoming, hasTimeline,
-  homeFact, awayFact,
+  replayReady, homeFact, awayFact,
   onBack, shareOpen, setShareOpen,
 }: {
   fixture: Fixture;
@@ -337,6 +350,7 @@ function MatchPageContent({
   isLive: boolean;
   isUpcoming: boolean;
   hasTimeline: boolean;
+  replayReady: boolean;
   homeFact: string;
   awayFact: string;
   onBack: () => void;
@@ -353,7 +367,7 @@ function MatchPageContent({
   const [revealedCount, setRevealedCount] = useState(0);
   const [replayMinute, setReplayMinute] = useState(0);
   const [replayLabel, setReplayLabel] = useState<string | undefined>();
-  const [pendingEntryIds, setPendingEntryIds] = useState<Set<string>>(() => new Set());
+  const [releasedEntryIds, setReleasedEntryIds] = useState<Set<string>>(() => new Set());
   const [animatingEntryIds, setAnimatingEntryIds] = useState<Set<string>>(() => new Set());
   const [confettiItems, setConfettiItems] = useState<Array<{ key: string; colors: string[]; delay?: number }>>([]);
   const revealTimerIdsRef = useRef<number[]>([]);
@@ -403,7 +417,7 @@ function MatchPageContent({
     if (!hasTimeline || isDone) return;
     clearRevealTimers();
     setRevealedCount(replayItems.length);
-    setPendingEntryIds(new Set());
+    setReleasedEntryIds(new Set(replayItems.map(item => item.id)));
     setAnimatingEntryIds(new Set());
     setPhase('done');
   }, [clearRevealTimers, hasTimeline, isDone, replayItems.length]);
@@ -436,6 +450,8 @@ function MatchPageContent({
   }, [replayItems, revealedCount]);
 
   useEffect(() => {
+    if (!replayReady) return;
+
     const timers: number[] = [];
     const scheduledItems = playableItems;
     replayItemsRef.current = scheduledItems;
@@ -505,20 +521,16 @@ function MatchPageContent({
       // First reserve the row space. The inner row reveal happens after the
       // entry delay; keep the timer behind until the visible event appears.
       schedule(() => {
-        setPendingEntryIds(prev => {
-          const next = new Set(prev);
-          clusterItems.forEach(item => next.add(item.id));
-          return next;
-        });
         setRevealedCount(clusterEnd);
       }, fireAt);
 
       for (let clusterIndex = 0; clusterIndex < clusterItems.length; clusterIndex++) {
         const item = clusterItems[clusterIndex];
+        const rowRevealAt = revealAt + clusterIndex * CLUSTER_STAGGER_MS;
         schedule(() => {
-          setPendingEntryIds(prev => {
+          setReleasedEntryIds(prev => {
             const next = new Set(prev);
-            next.delete(item.id);
+            next.add(item.id);
             return next;
           });
           setAnimatingEntryIds(prev => {
@@ -526,13 +538,6 @@ function MatchPageContent({
             next.add(item.id);
             return next;
           });
-          schedule(() => {
-            setAnimatingEntryIds(prev => {
-              const next = new Set(prev);
-              next.delete(item.id);
-              return next;
-            });
-          }, ENTRY_DURATION_MS + 80);
           if (item.kind === 'event' && GOAL_TYPES.has(item.event.type)) {
             const team = item.event.teamId === home.id ? home : away;
             setConfettiItems(prev => [
@@ -540,7 +545,14 @@ function MatchPageContent({
               { key: `${item.event.id}-${clusterStart + clusterIndex}`, colors: [team.primaryHex, team.secondaryHex, '#ffffff'] },
             ]);
           }
-        }, revealAt + clusterIndex * CLUSTER_STAGGER_MS);
+        }, rowRevealAt);
+        schedule(() => {
+          setAnimatingEntryIds(prev => {
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+        }, rowRevealAt + ENTRY_DURATION_MS + 80);
       }
 
       // At the visible reveal moment: clock reaches the event's minute and
@@ -578,7 +590,7 @@ function MatchPageContent({
 
     // Settle once the clock finishes.
     schedule(() => {
-      setPendingEntryIds(new Set());
+      setReleasedEntryIds(new Set(scheduledItems.map(item => item.id)));
       setAnimatingEntryIds(new Set());
       setPhase('done');
     }, lastScheduledTime + 800);
@@ -587,7 +599,7 @@ function MatchPageContent({
       revealTimerIdsRef.current = revealTimerIdsRef.current.filter(timerId => !timers.includes(timerId));
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount
+  }, [replayReady]); // start once the fixture-specific refresh has populated events
 
   // ── Derived display values ─────────────────────────────────────────────────
   const scoreVisible = phase === 'score' || phase === 'events' || isDone;
@@ -601,7 +613,7 @@ function MatchPageContent({
       ? (fixture.homeScore ?? 0)
       : replayItems
           .slice(0, revealedCount)
-          .filter(item => !pendingEntryIds.has(item.id))
+          .filter(item => releasedEntryIds.has(item.id))
           .filter(item => item.kind === 'event' && isScoringEvent(item.event) && item.event.teamId === home.id)
           .length
     : null;
@@ -610,7 +622,7 @@ function MatchPageContent({
       ? (fixture.awayScore ?? 0)
       : replayItems
           .slice(0, revealedCount)
-          .filter(item => !pendingEntryIds.has(item.id))
+          .filter(item => releasedEntryIds.has(item.id))
           .filter(item => item.kind === 'event' && isScoringEvent(item.event) && item.event.teamId === away.id)
           .length
     : null;
@@ -730,8 +742,9 @@ function MatchPageContent({
           {shownItems.length > 0 && (
             <EventTimeline
               items={shownItems}
-              pendingEntryIds={pendingEntryIds}
+              releasedEntryIds={releasedEntryIds}
               animatingEntryIds={animatingEntryIds}
+              isDone={isDone}
               homeTeamId={home.id}
               homeColor={home.secondaryHex}
               awayColor={awayInk}
@@ -996,11 +1009,12 @@ function ConfettiBurst({ colors, delay = 0 }: { colors: string[]; delay?: number
 // events are pushed down — matching "shifting down as they come in".
 
 function EventTimeline({
-  items, pendingEntryIds, animatingEntryIds, homeTeamId, homeColor, awayColor,
+  items, releasedEntryIds, animatingEntryIds, isDone, homeTeamId, homeColor, awayColor,
 }: {
   items: TimelineItem[];
-  pendingEntryIds: Set<string>;
+  releasedEntryIds: Set<string>;
   animatingEntryIds: Set<string>;
+  isDone: boolean;
   homeTeamId: string;
   homeColor: string;
   awayColor: string;
@@ -1067,7 +1081,7 @@ function EventTimeline({
           key={item.id}
           item={item}
           isNew={animatingEntryIds.has(item.id)}
-          isPending={pendingEntryIds.has(item.id)}
+          isPending={!isDone && !releasedEntryIds.has(item.id)}
           rowRef={el => {
             if (el) rowRefs.current.set(item.id, el);
             else rowRefs.current.delete(item.id);
@@ -1080,7 +1094,7 @@ function EventTimeline({
           homeColor={homeColor}
           awayColor={awayColor}
           isNew={animatingEntryIds.has(item.id)}
-          isPending={pendingEntryIds.has(item.id)}
+          isPending={!isDone && !releasedEntryIds.has(item.id)}
           rowRef={el => {
             if (el) rowRefs.current.set(item.id, el);
             else rowRefs.current.delete(item.id);
@@ -1093,7 +1107,7 @@ function EventTimeline({
           isHome={item.event.teamId === homeTeamId}
           color={item.event.teamId === homeTeamId ? homeColor : awayColor}
           isNew={animatingEntryIds.has(item.id)}
-          isPending={pendingEntryIds.has(item.id)}
+          isPending={!isDone && !releasedEntryIds.has(item.id)}
           rowRef={el => {
             if (el) rowRefs.current.set(item.id, el);
             else rowRefs.current.delete(item.id);

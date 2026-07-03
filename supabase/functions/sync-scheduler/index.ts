@@ -74,6 +74,11 @@ function fixtureUkDate(kickoffUtc: string): string {
   return ukParts(new Date(kickoffUtc)).date;
 }
 
+function addDaysToUkDate(ukDate: string, days: number): string {
+  const middayUtc = new Date(`${ukDate}T12:00:00.000Z`);
+  return ukParts(new Date(middayUtc.getTime() + days * 24 * 60 * 60 * 1000)).date;
+}
+
 function addMinutes(iso: string, minutes: number): string {
   return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }
@@ -117,9 +122,11 @@ async function ensureFixtureJobsForDate(ukDate: string, log: string[]): Promise<
     .order('kickoff_utc');
   if (fixtureError) throw fixtureError;
 
-  const todayFixtures = ((fixtures ?? []) as FixtureRow[])
-    .filter(fixture => fixtureUkDate(fixture.kickoff_utc) === ukDate);
-  const jobs = todayFixtures.flatMap(fixture => plannedFixtureJobs(fixture, ukDate));
+  const nextUkDate = addDaysToUkDate(ukDate, 1);
+  const fixturesToPlan = ((fixtures ?? []) as FixtureRow[])
+    .map(fixture => ({ fixture, uk: ukParts(new Date(fixture.kickoff_utc)) }))
+    .filter(({ uk }) => uk.date === ukDate || (uk.date === nextUkDate && uk.hour < 4));
+  const jobs = fixturesToPlan.flatMap(({ fixture, uk }) => plannedFixtureJobs(fixture, uk.date));
   const futureOrRecentJobs = jobs.filter(job => new Date(job.run_at).getTime() >= Date.now() - 2 * 60_000);
 
   if (futureOrRecentJobs.length > 0) {
@@ -129,8 +136,12 @@ async function ensureFixtureJobsForDate(ukDate: string, log: string[]): Promise<
     if (jobError) throw jobError;
   }
 
-  log.push(`Ensured ${futureOrRecentJobs.length} jobs for ${todayFixtures.length} resolved fixtures on ${ukDate}`);
-  return { fixtures: todayFixtures.length, jobs: futureOrRecentJobs.length };
+  const earlyNextDayFixtures = fixturesToPlan.filter(({ uk }) => uk.date === nextUkDate).length;
+  log.push(
+    `Ensured ${futureOrRecentJobs.length} jobs for ${fixturesToPlan.length} resolved fixtures on ${ukDate}` +
+    (earlyNextDayFixtures > 0 ? `, including ${earlyNextDayFixtures} early fixture(s) on ${nextUkDate}` : ''),
+  );
+  return { fixtures: fixturesToPlan.length, jobs: futureOrRecentJobs.length };
 }
 
 async function planTodayIfNeeded(now: Date, log: string[]) {
